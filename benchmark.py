@@ -4,10 +4,14 @@ import pandas as pd
 import time
 import argparse
 from typing import Tuple, Dict, Any, List
+import bitblas
 
 # -----------------------------------------------------------------------------
 # 辅助函数
 # -----------------------------------------------------------------------------
+def get_precision(W_dtype: str, A_dtype: str, out_dtype: str) -> str:
+    """精度标识"""
+    return W_dtype+"_"+A_dtype+"_"+out_dtype
 
 def get_gpu_name() -> str:
     """获取当前 CUDA 设备的名称"""
@@ -76,62 +80,54 @@ def calculate_gbps(m: int, n: int, k: int, precision: str, avg_time_ms: float) -
 # 核心测试逻辑
 # -----------------------------------------------------------------------------
 
-def get_bitblas_operator(precision: str):
+def get_bitblas_operator(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str):
     """
-    !!!!!! TODO: 关键集成点 !!!!!!
-    根据精度字符串，返回实际的 BitBLAS 算子或函数。
-    这只是一个占位符，你需要在这里导入并返回真实的 BitBLAS 函数。
+    根据精度字符串，返回实际的 BitBLAS 算子。
     """
-    # 示例: 假设你有一个名为 `bitblas` 的库
-    # from bitblas.ops import MatmulW4A16, MatmulW8A8, MatmulFP16
     
-    print(f"INFO: Attempting to get BitBLAS operator for precision '{precision}'.")
+    print(f"INFO: Attempting to get BitBLAS operator for precision '{get_precision(W_dtype, A_dtype, out_dtype)}'.")
     
-    if "FP16_FP16_FP16" in precision:
-        # 这是一个模拟函数，你需要替换它
-        def fp16_matmul(A, W):
-            return torch.matmul(A, W)
-        return fp16_matmul
-    elif "W4A16" in precision:
-        # 这里应该返回 BitBLAS 的 W4A16 算子
-        # return MatmulW4A16(...)
-        # 暂时用 torch.matmul 模拟
-        def w4a16_matmul(A, W_quantized):
-            W_dequantized = W_quantized # 模拟反量化
-            return torch.matmul(A, W_dequantized)
-        return w4a16_matmul
-    elif "W8A8" in precision:
-        # 这里应该返回 BitBLAS 的 W8A8 算子
-        # return MatmulW8A8(...)
-        # 暂时用 torch.matmul 模拟
-        def w8a8_matmul(A_quantized, W_quantized):
-            A_dequantized = A_quantized.to(torch.float16)
-            W_dequantized = W_quantized.to(torch.float16)
-            return torch.matmul(A_dequantized, W_dequantized)
-        return w8a8_matmul
-    else:
-        raise NotImplementedError(f"BitBLAS operator for precision '{precision}' is not defined in this script.")
+    try:
+        matmul_config = bitblas.MatmulConfig(
+            M=m,  # M dimension
+            N=n,  # N dimension
+            K=k,  # K dimension
+            A_dtype=A_dtype,  # activation A dtype
+            W_dtype=W_dtype,  # weight W dtype
+            accum_dtype="float16",  # accumulation dtype
+            out_dtype=out_dtype,  # output dtype
+            layout="nt",  # matrix layout, "nt" indicates the layout of A is non-transpose and the layout of W is transpose
+            with_bias=False,  # bias
+            # configs for weight only quantization
+            group_size=None,  # setting for grouped quantization
+            with_scaling=False,  # setting for scaling factor
+            with_zeros=False,  # setting for zeros
+            zeros_mode=None,  # setting for how to calculating zeros
+        )
+    except Exception as e:
+        raise RuntimeError(f"ERROR getting bitblas operator for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
+    return bitblas.Matmul(config=matmul_config)
 
 def run_benchmark(
-    m: int, n: int, k: int, precision: str, settings: Dict[str, Any]
+    m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, settings: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     为给定的配置运行单次基准测试。
     """
     result = {
-        "M": m, "N": n, "K": k, "Precision": precision,
+        "M": m, "N": n, "K": k, "Precision": get_precision(W_dtype, A_dtype, out_dtype),
         "Time_ms": -1.0, "TFLOPS": -1.0, "GB/s": -1.0
     }
     
     try:
         # 1. 获取 BitBLAS 算子
-        bitblas_op = get_bitblas_operator(precision)
+        bitblas_op = get_bitblas_operator(m, n, k, W_dtype, A_dtype, out_dtype)
 
         # 2. !!! TODO: 创建输入张量 !!!
         # 你需要根据 BitBLAS 的要求创建正确的 dtype 和 layout 的张量。
         # 例如，权重可能是预量化和打包的。
         # 这里的创建是示例性的。
-        a_bytes, w_bytes, _ = get_bytes_per_element(precision)
+        a_bytes, w_bytes, _ = get_bytes_per_element(W_dtype, A_dtype, out_dtype)
 
         # 模拟激活张量
         a_dtype = torch.float16 if a_bytes == 2 else torch.int8
@@ -169,7 +165,7 @@ def run_benchmark(
         
         # 5. 计算性能指标
         tflops = calculate_tflops(m, n, k, avg_time_ms)
-        gbps = calculate_gbps(m, n, k, precision, avg_time_ms)
+        gbps = calculate_gbps(m, n, k, W_dtype, A_dtype, out_dtype, avg_time_ms)
         
         result.update({
             "Time_ms": round(avg_time_ms, 5),
@@ -178,7 +174,7 @@ def run_benchmark(
         })
 
     except Exception as e:
-        print(f"ERROR running benchmark for M={m},N={n},K={k},P={precision}: {e}")
+        print(f"ERROR running benchmark for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
         # 可以在 result 中记录错误信息
         result['Error'] = str(e)
         
@@ -212,35 +208,41 @@ def main():
     all_results = []
     
     # 开始迭代测试
+    prefill_sequence_length = config['prefill_sequence_length']
     for model_name, layers in config['models'].items():
-        for layer_idx, (base_m, n, k) in enumerate(layers):
-            for precision in config['precisions']:
+        for (W_dtype, A_dtype, out_dtype) in config['precisions']:
+            for layer_name, (n, k) in layers.items():
                 for batch_size in config['batch_sizes']:
-                    
-                    # 计算实际的 M 维度
-                    m = base_m * batch_size
-                    
-                    print(f"--- Running Test ---")
-                    print(f"Model: {model_name}, Layer: {layer_idx}, Batch Size: {batch_size}")
-                    print(f"Shape (M, N, K): ({m}, {n}, {k}), Precision: {precision}")
-                    
-                    # 执行测试
-                    perf_data = run_benchmark(m, n, k, precision, config['test_settings'])
-                    
-                    # 补充元数据
-                    perf_data['GPU'] = gpu_name
-                    perf_data['Model'] = model_name
-                    perf_data['Layer_Index'] = layer_idx
-                    perf_data['Batch_Size'] = batch_size
-                    
-                    all_results.append(perf_data)
+                    for is_decode in range(2):
+                        sequence_length = 1 if is_decode else prefill_sequence_length
+                        state = "Decode" if is_decode else "Prefill"
+
+                        # 计算实际的 M 维度
+                        m = batch_size * sequence_length
+                        
+                        print(f"--- Running Test ---")
+                        print(f"Model: {model_name}, Layer: {layer_name}, Batch Size: {batch_size}, State: {state}")
+                        print(f"Shape (M, N, K): ({m}, {n}, {k})")
+                        print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})")
+                        
+                        # 执行测试
+                        perf_data = run_benchmark(m, n, k, W_dtype, A_dtype, out_dtype, config['test_settings'])
+                        
+                        # 补充元数据
+                        perf_data['GPU'] = gpu_name
+                        perf_data['Model'] = model_name
+                        perf_data['Layer_Name'] = layer_name
+                        perf_data['State'] = state
+                        perf_data['Batch_Size'] = batch_size
+                        
+                        all_results.append(perf_data)
     
     # 将结果转换为 DataFrame 并保存
     if all_results:
         df = pd.DataFrame(all_results)
         # 重新排列列的顺序，使其更易读
         cols_order = [
-            'GPU', 'Model', 'Layer_Index', 'Batch_Size', 'Precision',
+            'GPU', 'Model', 'Precision', 'Layer_Name', 'State', 'Batch_Size',
             'M', 'N', 'K', 'Time_ms', 'TFLOPS', 'GB/s', 'Error'
         ]
         # 过滤掉不存在的列

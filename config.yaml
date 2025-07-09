@@ -1,43 +1,28 @@
-# config.yaml
-# -----------------------------------------------------------------------------
-# BitBLAS 性能评测配置文件
-# -----------------------------------------------------------------------------
-
 # 1. 定义测试环境
-#    脚本会自动检测当前GPU，如果GPU名称包含在此列表的某个字符串中，测试将运行。
+#    脚本会自动检测当前GPU，如果GPU名称包含在此列表的某个字符串中，测试将运行
 #    例如, ["A100", "H100", "RTX 4090"]
 target_gpus:
-  - "A100"
-  - "H100"
-  - "RTX 4090"
-  - "L40S"
+  - "A800"
+  - "H800"
 
-# 2. 定义模型层级的矩阵尺寸 (M, N, K)
-#    对于大语言模型 (LLM)，这通常代表 FFN 和 Attention 层的矩阵乘法。
-#    格式: [batch_size * sequence_length, hidden_dim_out, hidden_dim_in]
-#    注意: 这里的 batch_size 是占位符，实际的 batch size 会在下面定义。
-#          这里我们只定义 M 的基础值 (即 sequence_length)。
+# 2. 定义模型层级的矩阵尺寸 (N, K)
+#    M的大小不在这里定义，而是由batch size和sequence length决定
+#    在prefill阶段，sequence length取一较大值，在decode阶段，sequence length取1
 models:
-  "Llama2-7B-Layer":
-    # M, N, K
-    - [4096, 11008, 4096]   # FFN Up-proj
-    - [4096, 4096, 11008]   # FFN Down-proj
-    - [4096, 4096, 4096]    # QKV Proj
-  "Mistral-7B-Layer":
-    # M, N, K
-    - [4096, 14336, 4096]   # FFN Up-proj
-    - [4096, 4096, 14336]   # FFN Down-proj
-    - [4096, 4096, 4096]    # QKV Proj
+  "Llama-3-8B-Layer":
+    # N, K
+    - "FFN Up-proj": [14336, 4096]
+    - "FFN Down-proj": [4096, 14336]
+    - "Attention": [4096, 4096]
 
 # 3. 定义量化精度
-#    这个列表将与 BitBLAS 的 API 对应。请使用你打算调用的实际精度名称。
+#    格式为[W_dtype, A_dtype, out_dtype]
 precisions:
-  - "FP16_FP16_FP16"  # Baseline: A=FP16, W=FP16, Out=FP16
-  - "W4A16_FP16"      # Example: A=FP16, W=INT4, Out=FP16
-  - "W8A8_FP16"       # Example: A=INT8, W=INT8, Out=FP16
+  - ["float16", "float16", "float16"]  # Baseline
+  - ["int4", "float16", "float16"]     # W4A16
+  - ["int8", "int8", "float16"]        # W8A8
 
-# 4. 定义 Batch Sizes
-#    这些值将乘以模型定义中的 M 维度。
+# 4. 定义 batch sizes 和 prefill_sequence_length
 batch_sizes:
   - 1
   - 2
@@ -46,7 +31,9 @@ batch_sizes:
   - 16
   - 32
 
+sequence_length: 4096
+
 # 5. 定义测试设置
 test_settings:
-  warmup_iterations: 20   # 预热运行次数，确保 GPU 达到稳定频率
+  warmup_iterations: 20   # 预热运行次数
   test_iterations: 100    # 实际测量性能的运行次数
