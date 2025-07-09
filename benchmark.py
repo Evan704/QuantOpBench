@@ -108,6 +108,17 @@ def get_bitblas_operator(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out
         raise RuntimeError(f"ERROR getting bitblas operator for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
     return bitblas.Matmul(config=matmul_config)
 
+def get_random_matrix(row: int, col: int, dtype: str, bitblas_op) -> torch.Tensor:
+    if dtype == "float16":
+        return torch.rand((row, col), dtype=torch.float16).cuda()
+    elif dtype == "int8":
+        return torch.randint(-8, 8, (row, col), dtype=torch.int8).cuda()
+    elif dtype == "int4":
+        tensor = torch.randint(-8, 8, (row, col), dtype=torch.int8).cuda()
+        return bitblas_op.tranform_weight(tensor)
+    else:
+        raise NotImplementedError(f"Invalid dtype: {dtype}")
+
 def run_benchmark(
     m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, settings: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -123,26 +134,10 @@ def run_benchmark(
         # 1. 获取 BitBLAS 算子
         bitblas_op = get_bitblas_operator(m, n, k, W_dtype, A_dtype, out_dtype)
 
-        # 2. !!! TODO: 创建输入张量 !!!
-        # 你需要根据 BitBLAS 的要求创建正确的 dtype 和 layout 的张量。
-        # 例如，权重可能是预量化和打包的。
-        # 这里的创建是示例性的。
-        a_bytes, w_bytes, _ = get_bytes_per_element(W_dtype, A_dtype, out_dtype)
-
-        # 模拟激活张量
-        a_dtype = torch.float16 if a_bytes == 2 else torch.int8
-        A = torch.randn(m, k, device="cuda", dtype=a_dtype)
-
-        # 模拟权重张量 (可能是量化的)
-        w_dtype = torch.float16
-        if w_bytes == 1:
-            w_dtype = torch.int8
-        elif w_bytes == 0.5:
-            # 对于 INT4，通常用 INT8 存储，需要特殊处理
-            # 这是一个简化，真实情况可能更复杂
-            W = torch.randint(-8, 7, (k, n), device="cuda", dtype=torch.int8)
-        else:
-            W = torch.randn(k, n, device="cuda", dtype=w_dtype)
+        # 2. 创建输入张量
+        # bitblas.Matmul 默认 W 转置后进行矩阵乘法
+        A = get_random_matrix(m, k, A_dtype, bitblas_op)
+        W = get_random_matrix(n, k, W_dtype, bitblas_op)
 
         # 3. 预热 GPU
         for _ in range(settings['warmup_iterations']):
@@ -160,7 +155,6 @@ def run_benchmark(
         
         torch.cuda.synchronize()
         
-        # 计算平均时间 (毫秒)
         avg_time_ms = start_event.elapsed_time(end_event) / settings['test_iterations']
         
         # 5. 计算性能指标
@@ -172,10 +166,9 @@ def run_benchmark(
             "TFLOPS": round(tflops, 2),
             "GB/s": round(gbps, 2)
         })
-
     except Exception as e:
         print(f"ERROR running benchmark for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
-        # 可以在 result 中记录错误信息
+        # 在 result 中记录错误信息
         result['Error'] = str(e)
         
     return result
