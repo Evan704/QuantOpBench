@@ -3,33 +3,33 @@
 #    例如, ["A100", "H100", "RTX 4090"]
 target_gpus:
   - "A800"
-  - "H800"
+  # - "H800" # bitblas 似乎不兼容 H800
 
 # 2. 定义模型层级的矩阵尺寸 (N, K)
-#    M的大小不在这里定义，而是由batch size和sequence length决定
-#    在prefill阶段，sequence length取一较大值，在decode阶段，sequence length取1
+#    M 的大小不在这里定义，而是由 batch size 和 sequence length 决定
+#    在 prefill 阶段，sequence length 取一较大值，在 decode 阶段，sequence length 取 1
 models:
   "Llama-3-8B-Layer":
     # N, K
-    - "FFN Up-proj": [14336, 4096]
-    - "FFN Down-proj": [4096, 14336]
-    - "Attention": [4096, 4096]
+    # "FFN Up-proj": [14336, 4096]
+    # "FFN Down-proj": [4096, 14336]
+    "Attention": [4096, 4096]
 
 # 3. 定义量化精度
 #    格式为[W_dtype, A_dtype, out_dtype]
 precisions:
   - ["float16", "float16", "float16"]  # Baseline
-  - ["int4", "float16", "float16"]     # W4A16
-  - ["int8", "int8", "float16"]        # W8A8
+  # - ["int4", "float16", "float16"]     # W4A16
+  # - ["int8", "int8", "float16"]        # W8A8
 
-# 4. 定义 batch sizes 和 prefill_sequence_length
+# 4. 定义 batch sizes 和 sequence_length
 batch_sizes:
   - 1
-  - 2
-  - 4
-  - 8
-  - 16
-  - 32
+  # - 2
+  # - 4
+  # - 8
+  # - 16
+  # - 32
 
 sequence_length: 4096
 

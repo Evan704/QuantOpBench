@@ -1,10 +1,10 @@
 import torch
 import yaml
 import pandas as pd
-import time
 import argparse
 from typing import Tuple, Dict, Any, List
 import bitblas
+import traceback
 
 # -----------------------------------------------------------------------------
 # 辅助函数
@@ -19,43 +19,20 @@ def get_gpu_name() -> str:
         raise RuntimeError("CUDA is not available. This script requires a GPU.")
     return torch.cuda.get_device_name(0)
 
-def get_bytes_per_element(precision_str: str) -> Tuple[float, float, float]:
-    """
-    根据精度字符串估算每个矩阵元素的字节数。
-    你需要根据 BitBLAS 的实际情况调整此函数。
-    返回 (A_bytes, W_bytes, C_bytes)
-    """
-    # 这是一个示例实现，你需要确认 BitBLAS 的具体数据类型
-    # FP16 = 2 bytes, INT8 = 1 byte, INT4 = 0.5 bytes
-    parts = precision_str.split('_')
-    # 例如 "W4A16_FP16" -> A=FP16, W=INT4, C=FP16
-    precision_map = {
-        'FP32': 4,
-        'FP16': 2,
-        'BF16': 2,
-        'A16': 2, # Assuming A16 is FP16
-        'W8': 1,
-        'A8': 1,
-        'W4': 0.5,
-    }
-    
-    # 示例逻辑，需要你根据实际情况修改
-    # 格式假定为 W{weight_prec}A{activation_prec}_{output_prec} 或 Aprec_Wprec_Cprec
-    if "FP16_FP16_FP16" in precision_str:
-        return 2.0, 2.0, 2.0
-    elif "W4A16" in precision_str:
-        return 2.0, 0.5, 2.0 # Activation=FP16, Weight=INT4, Output=FP16
-    elif "W8A8" in precision_str:
-        return 1.0, 1.0, 2.0 # Activation=INT8, Weight=INT8, Output=FP16
+def get_bytes(dtype: str) -> float:
+    if dtype == "float16":
+        return 2.0
+    elif dtype == "int8":
+        return 1.0
+    elif dtype == "int4":
+        return 0.5
     else:
-        # 默认返回一个基准值，并打印警告
-        print(f"Warning: Precision '{precision_str}' not fully recognized. Using default byte sizes (2,2,2).")
-        return 2.0, 2.0, 2.0
+        raise NotImplementedError(f"Invalid dtype: {dtype}")
 
 def calculate_tflops(m: int, n: int, k: int, avg_time_ms: float) -> float:
     """
-    计算 TFLOPS (每秒万亿次浮点运算)。
-    对于矩阵乘法，FLOPs 约为 2 * M * N * K。
+    计算 TFLOPS 
+    对于矩阵乘法, FLOPs 约为 2 * M * N * K
     """
     if avg_time_ms == 0:
         return 0.0
@@ -63,16 +40,18 @@ def calculate_tflops(m: int, n: int, k: int, avg_time_ms: float) -> float:
     tflops = flops / (avg_time_ms / 1000) / 1e12
     return tflops
 
-def calculate_gbps(m: int, n: int, k: int, precision: str, avg_time_ms: float) -> float:
+def calculate_gbps(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, avg_time_ms: float) -> float:
     """
     计算内存带宽 (GB/s)。
-    带宽 = (读取A + 读取W + 写入C) / 时间
+    带宽 = (读取A + 读取W + 写入O) / 时间
     """
     if avg_time_ms == 0:
         return 0.0
-    a_bytes, w_bytes, c_bytes = get_bytes_per_element(precision)
+    w_bytes = get_bytes(W_dtype)
+    a_bytes = get_bytes(A_dtype)
+    o_bytes = get_bytes(out_dtype)
     
-    total_bytes = (m * k * a_bytes) + (k * n * w_bytes) + (m * n * c_bytes)
+    total_bytes = (m * k * a_bytes) + (k * n * w_bytes) + (m * n * o_bytes)
     gbps = total_bytes / (avg_time_ms / 1000) / 1e9
     return gbps
 
@@ -104,9 +83,13 @@ def get_bitblas_operator(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out
             with_zeros=False,  # setting for zeros
             zeros_mode=None,  # setting for how to calculating zeros
         )
+        operator = bitblas.Matmul(config=matmul_config, enable_tuning=False)
+        if operator is None:
+            raise RuntimeError(f"bitblas.Matmul return None. Failed to find a suitable kernel for "
+                               f"M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}.")
+        return operator
     except Exception as e:
         raise RuntimeError(f"ERROR getting bitblas operator for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
-    return bitblas.Matmul(config=matmul_config)
 
 def get_random_matrix(row: int, col: int, dtype: str, bitblas_op) -> torch.Tensor:
     if dtype == "float16":
@@ -163,11 +146,12 @@ def run_benchmark(
         
         result.update({
             "Time_ms": round(avg_time_ms, 5),
-            "TFLOPS": round(tflops, 2),
-            "GB/s": round(gbps, 2)
+            "TFLOPS": round(tflops, 3),
+            "GB/s": round(gbps, 3)
         })
     except Exception as e:
         print(f"ERROR running benchmark for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
+        traceback.print_exc() 
         # 在 result 中记录错误信息
         result['Error'] = str(e)
         
@@ -201,7 +185,7 @@ def main():
     all_results = []
     
     # 开始迭代测试
-    prefill_sequence_length = config['prefill_sequence_length']
+    prefill_sequence_length = config['sequence_length']
     for model_name, layers in config['models'].items():
         for (W_dtype, A_dtype, out_dtype) in config['precisions']:
             for layer_name, (n, k) in layers.items():
