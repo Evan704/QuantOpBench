@@ -59,7 +59,9 @@ def calculate_gbps(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype
 # 核心测试逻辑
 # -----------------------------------------------------------------------------
 
-def get_bitblas_operator(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str):
+def get_bitblas_operator(
+        gpu_id: str, m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str
+    ) -> bitblas.Matmul:
     """
     根据精度字符串，返回实际的 BitBLAS 算子。
     """
@@ -83,7 +85,7 @@ def get_bitblas_operator(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out
             with_zeros=False,  # setting for zeros
             zeros_mode=None,  # setting for how to calculating zeros
         )
-        operator = bitblas.Matmul(config=matmul_config, enable_tuning=False)
+        operator = bitblas.Matmul(config=matmul_config, target=gpu_id)
         if operator is None:
             raise RuntimeError(f"bitblas.Matmul return None. Failed to find a suitable kernel for "
                                f"M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}.")
@@ -91,7 +93,7 @@ def get_bitblas_operator(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out
     except Exception as e:
         raise RuntimeError(f"ERROR getting bitblas operator for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
 
-def get_random_matrix(row: int, col: int, dtype: str, bitblas_op) -> torch.Tensor:
+def get_random_matrix(row: int, col: int, dtype: str, bitblas_op: bitblas.Matmul) -> torch.Tensor:
     if dtype == "float16":
         return torch.rand((row, col), dtype=torch.float16).cuda()
     elif dtype == "int8":
@@ -103,7 +105,7 @@ def get_random_matrix(row: int, col: int, dtype: str, bitblas_op) -> torch.Tenso
         raise NotImplementedError(f"Invalid dtype: {dtype}")
 
 def run_benchmark(
-    m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, settings: Dict[str, Any]
+    gpu_id: str, m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, settings: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     为给定的配置运行单次基准测试。
@@ -115,7 +117,7 @@ def run_benchmark(
     
     try:
         # 1. 获取 BitBLAS 算子
-        bitblas_op = get_bitblas_operator(m, n, k, W_dtype, A_dtype, out_dtype)
+        bitblas_op = get_bitblas_operator(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
 
         # 2. 创建输入张量
         # bitblas.Matmul 默认 W 转置后进行矩阵乘法
@@ -177,10 +179,17 @@ def main():
 
     # 检查 GPU 环境
     gpu_name = get_gpu_name()
+    gpu_id = ""
+    in_list = False
     print(f"Detected GPU: {gpu_name}")
-    if not any(target in gpu_name for target in config['target_gpus']):
-        print(f"Warning: GPU '{gpu_name}' is not in the target list. Continuing anyway.")
-
+    for target, id in config['target_gpus'].items():
+        if target in gpu_name:
+            gpu_id = id
+            in_list = True
+            break
+    if not in_list:
+        print(f"{gpu_name} is not in the target list. Continue anyway.")
+    
     # 准备存储结果
     all_results = []
     
@@ -203,7 +212,7 @@ def main():
                         print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})")
                         
                         # 执行测试
-                        perf_data = run_benchmark(m, n, k, W_dtype, A_dtype, out_dtype, config['test_settings'])
+                        perf_data = run_benchmark(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype, config['test_settings'])
                         
                         # 补充元数据
                         perf_data['GPU'] = gpu_name

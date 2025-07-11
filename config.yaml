@@ -2,8 +2,7 @@
 #    脚本会自动检测当前GPU，如果GPU名称包含在此列表的某个字符串中，测试将运行
 #    例如, ["A100", "H100", "RTX 4090"]
 target_gpus:
-  - "A800"
-  # - "H800" # bitblas 似乎不兼容 H800
+  "A800": "nvidia/nvidia-a100"
 
 # 2. 定义模型层级的矩阵尺寸 (N, K)
 #    M 的大小不在这里定义，而是由 batch size 和 sequence length 决定
