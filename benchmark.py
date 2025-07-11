@@ -100,7 +100,7 @@ def get_random_matrix(row: int, col: int, dtype: str, bitblas_op: bitblas.Matmul
         return torch.randint(-8, 8, (row, col), dtype=torch.int8).cuda()
     elif dtype == "int4":
         tensor = torch.randint(-8, 8, (row, col), dtype=torch.int8).cuda()
-        return bitblas_op.tranform_weight(tensor)
+        return bitblas_op.transform_weight(tensor)
     else:
         raise NotImplementedError(f"Invalid dtype: {dtype}")
 
