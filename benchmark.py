@@ -26,6 +26,8 @@ def get_bytes(dtype: str) -> float:
         return 1.0
     elif dtype == "int4":
         return 0.5
+    elif dtype == "int32":
+        return 4.0
     else:
         raise NotImplementedError(f"Invalid dtype: {dtype}")
 
@@ -69,13 +71,14 @@ def get_bitblas_operator(
     print(f"INFO: Attempting to get BitBLAS operator for precision '{get_precision(W_dtype, A_dtype, out_dtype)}'.")
     
     try:
+        accum_dtype = "int32" if W_dtype is "int8" and A_dtype is "int8" else "float16"
         matmul_config = bitblas.MatmulConfig(
             M=m,  # M dimension
             N=n,  # N dimension
             K=k,  # K dimension
             A_dtype=A_dtype,  # activation A dtype
             W_dtype=W_dtype,  # weight W dtype
-            accum_dtype="float16",  # accumulation dtype
+            accum_dtype=accum_dtype,  # accumulation dtype
             out_dtype=out_dtype,  # output dtype
             layout="nt",  # matrix layout, "nt" indicates the layout of A is non-transpose and the layout of W is transpose
             with_bias=False,  # bias
@@ -93,17 +96,6 @@ def get_bitblas_operator(
     except Exception as e:
         raise RuntimeError(f"ERROR getting bitblas operator for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
 
-def get_random_matrix(row: int, col: int, dtype: str, bitblas_op: bitblas.Matmul) -> torch.Tensor:
-    if dtype == "float16":
-        return torch.rand((row, col), dtype=torch.float16).cuda()
-    elif dtype == "int8":
-        return torch.randint(-8, 8, (row, col), dtype=torch.int8).cuda()
-    elif dtype == "int4":
-        tensor = torch.randint(-8, 8, (row, col), dtype=torch.int8).cuda()
-        return bitblas_op.transform_weight(tensor)
-    else:
-        raise NotImplementedError(f"Invalid dtype: {dtype}")
-
 def run_benchmark(
     gpu_id: str, m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, settings: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -116,39 +108,18 @@ def run_benchmark(
     }
     
     try:
-        # 1. 获取 BitBLAS 算子
+        # 获取 BitBLAS 算子
         bitblas_op = get_bitblas_operator(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
 
-        # 2. 创建输入张量
-        # bitblas.Matmul 默认 W 转置后进行矩阵乘法
-        A = get_random_matrix(m, k, A_dtype, bitblas_op)
-        W = get_random_matrix(n, k, W_dtype, bitblas_op)
-
-        # 3. 预热 GPU
-        for _ in range(settings['warmup_iterations']):
-            _ = bitblas_op(A, W)
-        torch.cuda.synchronize()
-
-        # 4. 精确计时
-        start_event = torch.cuda.Event(enable_timing=True)
-        end_event = torch.cuda.Event(enable_timing=True)
+        avg_time_ms = bitblas_op.profile_latency()
         
-        start_event.record()
-        for _ in range(settings['test_iterations']):
-            _ = bitblas_op(A, W)
-        end_event.record()
-        
-        torch.cuda.synchronize()
-        
-        avg_time_ms = start_event.elapsed_time(end_event) / settings['test_iterations']
-        
-        # 5. 计算性能指标
+        # 计算性能指标
         tflops = calculate_tflops(m, n, k, avg_time_ms)
         gbps = calculate_gbps(m, n, k, W_dtype, A_dtype, out_dtype, avg_time_ms)
         
         result.update({
             "Time_ms": round(avg_time_ms, 5),
-            "TFLOPS": round(tflops, 3),
+            "TFLOPS/TOPS": round(tflops, 3),
             "GB/s": round(gbps, 3)
         })
     except Exception as e:
@@ -229,7 +200,7 @@ def main():
         # 重新排列列的顺序，使其更易读
         cols_order = [
             'GPU', 'Model', 'Precision', 'Layer_Name', 'State', 'Batch_Size',
-            'M', 'N', 'K', 'Time_ms', 'TFLOPS', 'GB/s', 'Error'
+            'M', 'N', 'K', 'Time_ms', 'TFLOPS/TOPS', 'GB/s', 'Error'
         ]
         # 过滤掉不存在的列
         df_cols = [col for col in cols_order if col in df.columns]
