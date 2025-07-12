@@ -71,7 +71,7 @@ def get_bitblas_operator(
     print(f"INFO: Attempting to get BitBLAS operator for precision '{get_precision(W_dtype, A_dtype, out_dtype)}'.")
     
     try:
-        accum_dtype = "int32" if W_dtype is "int8" and A_dtype is "int8" else "float16"
+        accum_dtype = "int32" if W_dtype == "int8" and A_dtype == "int8" else "float16"
         matmul_config = bitblas.MatmulConfig(
             M=m,  # M dimension
             N=n,  # N dimension
@@ -97,7 +97,7 @@ def get_bitblas_operator(
         raise RuntimeError(f"ERROR getting bitblas operator for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
 
 def run_benchmark(
-    gpu_id: str, m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, settings: Dict[str, Any]
+    gpu_id: str, m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str
 ) -> Dict[str, Any]:
     """
     为给定的配置运行单次基准测试。
@@ -183,7 +183,7 @@ def main():
                         print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})")
                         
                         # 执行测试
-                        perf_data = run_benchmark(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype, config['test_settings'])
+                        perf_data = run_benchmark(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
                         
                         # 补充元数据
                         perf_data['GPU'] = gpu_name

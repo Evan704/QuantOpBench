@@ -10,16 +10,16 @@ target_gpus:
 models:
   "Llama-3-8B-Layer":
     # N, K
-    # "FFN Up-proj": [14336, 4096]
-    # "FFN Down-proj": [4096, 14336]
+    "FFN Up-proj": [14336, 4096]
+    "FFN Down-proj": [4096, 14336]
     "Attention": [4096, 4096]
 
 # 3. 定义量化精度
 #    格式为[W_dtype, A_dtype, out_dtype]
 precisions:
-  # - ["float16", "float16", "float16"]  # Baseline
-  # - ["int4", "float16", "float16"]     # W4A16
-  - ["int8", "int8", "int32"]        # W8A8
+  - ["float16", "float16", "float16"]  # Baseline
+  - ["int4", "float16", "float16"]     # W4A16
+  - ["int8", "int8", "int32"]          # W8A8
 
 # 4. 定义 batch sizes 和 sequence_length
 batch_sizes:
@@ -33,6 +33,6 @@ batch_sizes:
 sequence_length: 4096
 
 # 5. 定义测试设置
-test_settings:
-  warmup_iterations: 20   # 预热运行次数
-  test_iterations: 100    # 实际测量性能的运行次数
+# test_settings:
+#   warmup_iterations: 20   # 预热运行次数
+#   test_iterations: 100    # 实际测量性能的运行次数
