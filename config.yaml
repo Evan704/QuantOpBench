@@ -1,18 +1,23 @@
 # 1. 定义测试环境
-#    脚本会自动检测当前GPU，如果GPU名称包含在此列表的某个字符串中，测试将运行
-#    例如, ["A100", "H100", "RTX 4090"]
 target_gpus:
   "A800": "nvidia/nvidia-a100"
+  "H800": "nvidia/nvidia-h100"
 
 # 2. 定义模型层级的矩阵尺寸 (N, K)
 #    M 的大小不在这里定义，而是由 batch size 和 sequence length 决定
 #    在 prefill 阶段，sequence length 取一较大值，在 decode 阶段，sequence length 取 1
 models:
-  "Llama-3-8B-Layer":
+  "Llama-3-8B":
     # N, K
     "FFN Up-proj": [14336, 4096]
     "FFN Down-proj": [4096, 14336]
-    "Attention": [4096, 4096]
+    "Q-proj": [4096, 4096]
+    "KV-proj": [4096, 1024]
+  "Llama-3-70B":
+    "FFN Up-proj": [28672, 8192]
+    "FFN Down-proj": [8192, 28672]
+    "Q-proj": [8192, 8192]
+    "KV-proj": [8192, 1024]
 
 # 3. 定义量化精度
 #    格式为[W_dtype, A_dtype, out_dtype]
@@ -24,11 +29,8 @@ precisions:
 # 4. 定义 batch sizes 和 sequence_length
 batch_sizes:
   - 1
-  # - 2
-  # - 4
-  # - 8
-  # - 16
-  # - 32
+  - 16
+  - 32
 
 sequence_length: 4096
 

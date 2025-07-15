@@ -100,7 +100,7 @@ def run_benchmark(
     gpu_id: str, m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str
 ) -> Dict[str, Any]:
     """
-    为给定的配置运行单次基准测试。
+    为给定的配置运行基准测试。
     """
     result = {
         "M": m, "N": n, "K": k, "Precision": get_precision(W_dtype, A_dtype, out_dtype),
@@ -111,6 +111,7 @@ def run_benchmark(
         # 获取 BitBLAS 算子
         bitblas_op = get_bitblas_operator(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
 
+        bitblas_op.profile_latency() # warmup
         avg_time_ms = bitblas_op.profile_latency()
         
         # 计算性能指标
@@ -177,10 +178,10 @@ def main():
                         # 计算实际的 M 维度
                         m = batch_size * sequence_length
                         
-                        print(f"--- Running Test ---")
+                        print(f"--------- Running Test ---------")
                         print(f"Model: {model_name}, Layer: {layer_name}, Batch Size: {batch_size}, State: {state}")
                         print(f"Shape (M, N, K): ({m}, {n}, {k})")
-                        print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})")
+                        print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})\n")
                         
                         # 执行测试
                         perf_data = run_benchmark(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
@@ -206,7 +207,7 @@ def main():
         df_cols = [col for col in cols_order if col in df.columns]
         df = df[df_cols]
 
-        print("\n--- Benchmark Results ---")
+        print("\n--------- Benchmark Results ---------")
         print(df.to_string())
         
         # 保存到 CSV

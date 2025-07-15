@@ -1,5 +1,4 @@
 *.log
 output.txt
-*.csv
 .pkl_memoize_py3
 test.py
