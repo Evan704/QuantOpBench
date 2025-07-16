@@ -64,7 +64,7 @@ def calculate_gbps(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype
 # -----------------------------------------------------------------------------
 
 def get_bitblas_operator(
-        gpu_id: str, m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str
+        gpu_id: str, m_values: List[int], n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str
     ) -> bitblas.Matmul:
     """
     根据精度字符串，返回实际的 BitBLAS 算子。
@@ -73,7 +73,7 @@ def get_bitblas_operator(
     print(f"INFO: Attempting to get BitBLAS operator for precision '{get_precision(W_dtype, A_dtype, out_dtype)}'.")
     accum_dtype = "int32" if W_dtype == "int8" and A_dtype == "int8" else "float32"
     matmul_config = bitblas.MatmulConfig(
-        M=m,  # M dimension
+        M=m_values,  # M dimension
         N=n,  # N dimension
         K=k,  # K dimension
         A_dtype=A_dtype,  # activation A dtype
@@ -90,13 +90,10 @@ def get_bitblas_operator(
     )
     backend = "tir" if gpu_id == "nvidia/nvidia-h100" else "tl"
     operator = bitblas.Matmul(config=matmul_config, backend=backend)
-    if operator is None:
-        raise RuntimeError(f"bitblas.Matmul return None. Failed to find a suitable kernel for "
-                            f"M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}.")
     return operator
 
 def run_benchmark(
-    gpu_id: str, m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str
+    m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, bitblas_op: bitblas.Matmul
 ) -> Dict[str, Any]:
     """
     为给定的配置运行基准测试。
@@ -107,12 +104,9 @@ def run_benchmark(
     }
     
     try:
-        # 获取 BitBLAS 算子
-        bitblas_op = get_bitblas_operator(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
-        print("Succesfully get the operator!")
-
-        bitblas_op.profile_latency() # warmup
-        avg_time_ms = bitblas_op.profile_latency()
+        avg_time_ms = bitblas_op.profile_latency(
+            dynamic_symbolic_constraints={"m": m}
+        )
         
         # 计算性能指标
         tflops = calculate_tflops(m, n, k, avg_time_ms)
@@ -172,20 +166,26 @@ def main():
     for model_name, layers in config['models'].items():
         for (W_dtype, A_dtype, out_dtype) in config['precisions']:
             for layer_name, (n, k) in layers.items():
-                for m in config['M']:
+                m_values = config['M']
+                
+                # 为一系列 M 获取 BitBLAS 算子
+                bitblas_op = get_bitblas_operator(gpu_id, m_values, n, k, W_dtype, A_dtype, out_dtype)
+                print("Succesfully get the operator!")
+
+                for m in m_values:
                     print(f"--------- Running Test ---------")
                     print(f"Model: {model_name}, Layer: {layer_name}")
                     print(f"Shape (M, N, K): ({m}, {n}, {k})")
                     print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})")
                     
                     # 执行测试
-                    perf_data = run_benchmark(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
+                    perf_data = run_benchmark(m, n, k, W_dtype, A_dtype, out_dtype, bitblas_op)
                     
                     # 补充元数据
                     perf_data['GPU'] = gpu_name
                     perf_data['Model'] = model_name
                     perf_data['Layer_Name'] = layer_name
-                    
+                
                     part_results.append(perf_data)
 
             # 为每个模型的特定精度及时保存，避免崩溃
