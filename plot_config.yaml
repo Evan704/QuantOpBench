@@ -1,0 +1,20 @@
+# 1. 测试环境
+target_gpus:
+  # "A800": "nvidia/nvidia-a100"
+  "H800": "nvidia/nvidia-h100"
+
+# 2. 模型
+models:
+  - "Llama-3-8B"
+  - "Llama-3-70B"
+
+# 3. 量化精度
+#    格式为W_dtype_A_dtype_out_dtype
+precisions:
+  - "float16_float16_float16"  # Baseline
+  - "int4_float16_float16"     # W4A16
+  - "int8_int8_int32"          # W8A8
+
+# 路径设置
+data_path: "data/"
+img_path: "img/"
