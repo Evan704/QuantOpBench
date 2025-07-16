@@ -6,6 +6,8 @@ from typing import Tuple, Dict, Any, List
 import bitblas
 import traceback
 
+# bitblas.set_log_level("Debug")
+
 # -----------------------------------------------------------------------------
 # 辅助函数
 # -----------------------------------------------------------------------------
@@ -26,7 +28,7 @@ def get_bytes(dtype: str) -> float:
         return 1.0
     elif dtype == "int4":
         return 0.5
-    elif dtype == "int32":
+    elif dtype == "int32" or dtype == "float32":
         return 4.0
     else:
         raise NotImplementedError(f"Invalid dtype: {dtype}")
@@ -69,32 +71,29 @@ def get_bitblas_operator(
     """
     
     print(f"INFO: Attempting to get BitBLAS operator for precision '{get_precision(W_dtype, A_dtype, out_dtype)}'.")
-    
-    try:
-        accum_dtype = "int32" if W_dtype == "int8" and A_dtype == "int8" else "float16"
-        matmul_config = bitblas.MatmulConfig(
-            M=m,  # M dimension
-            N=n,  # N dimension
-            K=k,  # K dimension
-            A_dtype=A_dtype,  # activation A dtype
-            W_dtype=W_dtype,  # weight W dtype
-            accum_dtype=accum_dtype,  # accumulation dtype
-            out_dtype=out_dtype,  # output dtype
-            layout="nt",  # matrix layout, "nt" indicates the layout of A is non-transpose and the layout of W is transpose
-            with_bias=False,  # bias
-            # configs for weight only quantization
-            group_size=None,  # setting for grouped quantization
-            with_scaling=False,  # setting for scaling factor
-            with_zeros=False,  # setting for zeros
-            zeros_mode=None,  # setting for how to calculating zeros
-        )
-        operator = bitblas.Matmul(config=matmul_config, target=gpu_id)
-        if operator is None:
-            raise RuntimeError(f"bitblas.Matmul return None. Failed to find a suitable kernel for "
-                               f"M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}.")
-        return operator
-    except Exception as e:
-        raise RuntimeError(f"ERROR getting bitblas operator for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
+    accum_dtype = "int32" if W_dtype == "int8" and A_dtype == "int8" else "float32"
+    matmul_config = bitblas.MatmulConfig(
+        M=m,  # M dimension
+        N=n,  # N dimension
+        K=k,  # K dimension
+        A_dtype=A_dtype,  # activation A dtype
+        W_dtype=W_dtype,  # weight W dtype
+        accum_dtype=accum_dtype,  # accumulation dtype
+        out_dtype=out_dtype,  # output dtype
+        layout="nt",  # matrix layout, "nt" indicates the layout of A is non-transpose and the layout of W is transpose
+        with_bias=False,  # bias
+        # configs for weight only quantization
+        group_size=None,  # setting for grouped quantization
+        with_scaling=False,  # setting for scaling factor
+        with_zeros=False,  # setting for zeros
+        zeros_mode=None,  # setting for how to calculating zeros
+    )
+    backend = "tir" if gpu_id == "nvidia/nvidia-h100" else "tl"
+    operator = bitblas.Matmul(config=matmul_config, backend=backend)
+    if operator is None:
+        raise RuntimeError(f"bitblas.Matmul return None. Failed to find a suitable kernel for "
+                            f"M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}.")
+    return operator
 
 def run_benchmark(
     gpu_id: str, m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str
@@ -110,6 +109,7 @@ def run_benchmark(
     try:
         # 获取 BitBLAS 算子
         bitblas_op = get_bitblas_operator(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
+        print("Succesfully get the operator!")
 
         bitblas_op.profile_latency() # warmup
         avg_time_ms = bitblas_op.profile_latency()
@@ -123,6 +123,11 @@ def run_benchmark(
             "TFLOPS/TOPS": round(tflops, 3),
             "GB/s": round(gbps, 3)
         })
+
+        print("Successfully finished the test!")
+        print(f"Time_ms: {round(avg_time_ms, 5)}")
+        print(f"TFLOPS/TOPS: {round(tflops, 3)}")
+        print(f"GB/s: {round(gbps, 3)}\n")
     except Exception as e:
         print(f"ERROR running benchmark for M={m}, N={n}, K={k}, Precision={get_precision(W_dtype, A_dtype, out_dtype)}: {e}")
         traceback.print_exc() 
@@ -140,9 +145,6 @@ def main():
     parser.add_argument(
         "--config", type=str, default="config.yaml", help="Path to the config YAML file."
     )
-    parser.add_argument(
-        "--output", type=str, default="benchmark_results.csv", help="Path to save the results CSV file."
-    )
     args = parser.parse_args()
 
     # 加载配置
@@ -157,64 +159,55 @@ def main():
     for target, id in config['target_gpus'].items():
         if target in gpu_name:
             gpu_id = id
+            gpu_name = target
             in_list = True
             break
     if not in_list:
         print(f"{gpu_name} is not in the target list. Continue anyway.")
     
     # 准备存储结果
-    all_results = []
+    part_results = []
     
     # 开始迭代测试
-    prefill_sequence_length = config['sequence_length']
     for model_name, layers in config['models'].items():
         for (W_dtype, A_dtype, out_dtype) in config['precisions']:
             for layer_name, (n, k) in layers.items():
-                for batch_size in config['batch_sizes']:
-                    for is_decode in range(2):
-                        sequence_length = 1 if is_decode else prefill_sequence_length
-                        state = "Decode" if is_decode else "Prefill"
+                for m in config['M']:
+                    print(f"--------- Running Test ---------")
+                    print(f"Model: {model_name}, Layer: {layer_name}")
+                    print(f"Shape (M, N, K): ({m}, {n}, {k})")
+                    print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})")
+                    
+                    # 执行测试
+                    perf_data = run_benchmark(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
+                    
+                    # 补充元数据
+                    perf_data['GPU'] = gpu_name
+                    perf_data['Model'] = model_name
+                    perf_data['Layer_Name'] = layer_name
+                    
+                    part_results.append(perf_data)
 
-                        # 计算实际的 M 维度
-                        m = batch_size * sequence_length
-                        
-                        print(f"--------- Running Test ---------")
-                        print(f"Model: {model_name}, Layer: {layer_name}, Batch Size: {batch_size}, State: {state}")
-                        print(f"Shape (M, N, K): ({m}, {n}, {k})")
-                        print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})\n")
-                        
-                        # 执行测试
-                        perf_data = run_benchmark(gpu_id, m, n, k, W_dtype, A_dtype, out_dtype)
-                        
-                        # 补充元数据
-                        perf_data['GPU'] = gpu_name
-                        perf_data['Model'] = model_name
-                        perf_data['Layer_Name'] = layer_name
-                        perf_data['State'] = state
-                        perf_data['Batch_Size'] = batch_size
-                        
-                        all_results.append(perf_data)
-    
-    # 将结果转换为 DataFrame 并保存
-    if all_results:
-        df = pd.DataFrame(all_results)
-        # 重新排列列的顺序，使其更易读
-        cols_order = [
-            'GPU', 'Model', 'Precision', 'Layer_Name', 'State', 'Batch_Size',
-            'M', 'N', 'K', 'Time_ms', 'TFLOPS/TOPS', 'GB/s', 'Error'
-        ]
-        # 过滤掉不存在的列
-        df_cols = [col for col in cols_order if col in df.columns]
-        df = df[df_cols]
+            # 为每个模型的特定精度及时保存，避免崩溃
+            df = pd.DataFrame(part_results)
+            # 重新排列列的顺序，使其更易读
+            cols_order = [
+                'GPU', 'Model', 'Precision', 'Layer_Name',
+                'M', 'N', 'K', 'Time_ms', 'TFLOPS/TOPS', 'GB/s', 'Error'
+            ]
+            # 过滤掉不存在的列
+            df_cols = [col for col in cols_order if col in df.columns]
+            df = df[df_cols]
 
-        print("\n--------- Benchmark Results ---------")
-        print(df.to_string())
+            file_name = gpu_name + '-' + model_name + '-' + get_precision(W_dtype, A_dtype, out_dtype) + ".csv"
+            path = "data/" + file_name
+            print(f"--------- Benchmark Results For {file_name}---------")
+            print(df.to_string())
         
-        # 保存到 CSV
-        df.to_csv(args.output, index=False)
-        print(f"\nResults saved to {args.output}")
-    else:
-        print("No benchmarks were run.")
+            df.to_csv(path, index=False)
+            print(f"Results saved to {path}\n")
+
+            part_results = []
 
 if __name__ == "__main__":
     main()
