@@ -1,7 +1,7 @@
 # 1. 测试环境
 target_gpus:
-  # "A800": "nvidia/nvidia-a100"
-  "H800": "nvidia/nvidia-h100"
+  "A800": "nvidia/nvidia-a100"
+  # "H800": "nvidia/nvidia-h100"
 
 # 2. 模型
 models:
