@@ -2,3 +2,4 @@
 output.txt
 .pkl_memoize_py3
 test.py
+__pycache__

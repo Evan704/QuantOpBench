@@ -1,0 +1,45 @@
+Operator,GPU,Model,Precision,Layer_Name,M,N,K,Time_ms,TFLOPS/TOPS,GB/s
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,1,8192,8192,0.05153,2.605,2605.389
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,16,8192,8192,0.05242,40.968,2570.502
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,32,8192,8192,0.05656,75.938,2391.608
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,64,8192,8192,0.05213,164.779,2614.907
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,128,8192,8192,0.05162,332.786,2681.14
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,256,8192,8192,0.06704,512.553,2127.294
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,512,8192,8192,0.09956,690.225,1516.608
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,1024,8192,8192,0.20205,680.212,830.337
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,2048,8192,8192,0.39601,694.118,508.387
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,4096,8192,8192,0.8459,649.903,317.335
+torch,H800,Llama-3-70B,float16_float16_float16,Q-proj,8192,8192,8192,1.66045,662.178,242.497
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,1,8192,1024,0.01788,0.938,939.253
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,16,8192,1024,0.0178,15.077,958.884
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,32,8192,1024,0.01775,30.252,978.614
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,64,8192,1024,0.01328,80.842,1351.978
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,128,8192,1024,0.01341,160.153,1427.144
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,256,8192,1024,0.02047,209.777,1049.912
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,512,8192,1024,0.02119,405.424,1237.257
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,1024,8192,1024,0.03944,435.616,903.989
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,2048,8192,1024,0.05802,592.194,939.76
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,4096,8192,1024,0.10166,675.994,907.707
+torch,H800,Llama-3-70B,float16_float16_float16,KV-proj,8192,8192,1024,0.19726,696.752,850.527
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,1,28672,8192,0.15982,2.939,2939.778
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,16,28672,8192,0.16517,45.506,2851.245
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,32,28672,8192,0.16492,91.15,2862.741
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,64,28672,8192,0.16905,177.844,2806.717
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,128,28672,8192,0.15895,378.3,3014.845
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,256,28672,8192,0.1923,625.382,2541.051
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,512,28672,8192,0.39787,604.512,1275.564
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,1024,28672,8192,0.74995,641.425,727.062
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,2048,28672,8192,1.60783,598.369,386.085
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,4096,28672,8192,2.94861,652.561,261.734
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Up-proj,8192,28672,8192,6.20211,620.481,173.125
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,1,8192,28672,0.18445,2.547,2547.174
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,16,8192,28672,0.15584,48.229,3021.882
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,32,8192,28672,0.15432,97.411,3059.391
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,64,8192,28672,0.15644,192.176,3032.907
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,128,8192,28672,0.15966,376.61,3001.376
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,256,8192,28672,0.18378,654.366,2658.819
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,512,8192,28672,0.33024,728.314,1536.795
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,1024,8192,28672,0.78561,612.31,694.06
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,2048,8192,28672,1.44131,667.497,430.688
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,4096,8192,28672,2.89171,665.4,266.884
+torch,H800,Llama-3-70B,float16_float16_float16,FFN Down-proj,8192,8192,28672,5.7671,667.284,186.184

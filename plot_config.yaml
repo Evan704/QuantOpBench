@@ -18,3 +18,7 @@ precisions:
 # 路径设置
 data_path: "data/"
 img_path: "img/"
+
+operators:
+  - "bitblas"
+  - "torch"

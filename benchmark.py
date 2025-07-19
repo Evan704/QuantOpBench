@@ -5,59 +5,14 @@ import argparse
 from typing import Tuple, Dict, Any, List
 import bitblas
 import traceback
+from utils import get_precision, get_gpu_name, calculate_gbps, calculate_tflops
 
 # bitblas.set_log_level("Debug")
 
-# -----------------------------------------------------------------------------
-# 辅助函数
-# -----------------------------------------------------------------------------
-def get_precision(W_dtype: str, A_dtype: str, out_dtype: str) -> str:
-    """精度标识"""
-    return W_dtype+"_"+A_dtype+"_"+out_dtype
-
-def get_gpu_name() -> str:
-    """获取当前 CUDA 设备的名称"""
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available. This script requires a GPU.")
-    return torch.cuda.get_device_name(0)
-
-def get_bytes(dtype: str) -> float:
-    if dtype == "float16":
-        return 2.0
-    elif dtype == "int8":
-        return 1.0
-    elif dtype == "int4":
-        return 0.5
-    elif dtype == "int32" or dtype == "float32":
-        return 4.0
-    else:
-        raise NotImplementedError(f"Invalid dtype: {dtype}")
-
-def calculate_tflops(m: int, n: int, k: int, avg_time_ms: float) -> float:
-    """
-    计算 TFLOPS 
-    对于矩阵乘法, FLOPs 约为 2 * M * N * K
-    """
-    if avg_time_ms == 0:
-        return 0.0
-    flops = 2 * m * n * k
-    tflops = flops / (avg_time_ms / 1000) / 1e12
-    return tflops
-
-def calculate_gbps(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, avg_time_ms: float) -> float:
-    """
-    计算内存带宽 (GB/s)。
-    带宽 = (读取A + 读取W + 写入O) / 时间
-    """
-    if avg_time_ms == 0:
-        return 0.0
-    w_bytes = get_bytes(W_dtype)
-    a_bytes = get_bytes(A_dtype)
-    o_bytes = get_bytes(out_dtype)
-    
-    total_bytes = (m * k * a_bytes) + (k * n * w_bytes) + (m * n * o_bytes)
-    gbps = total_bytes / (avg_time_ms / 1000) / 1e9
-    return gbps
+dtype_dict = {
+    "float16": torch.float16,
+    "int8": torch.int8
+}
 
 # -----------------------------------------------------------------------------
 # 核心测试逻辑
@@ -88,11 +43,13 @@ def get_bitblas_operator(
         with_zeros=False,  # setting for zeros
         zeros_mode=None,  # setting for how to calculating zeros
     )
-    backend = "tir" if gpu_id == "nvidia/nvidia-h100" else "tl"
-    operator = bitblas.Matmul(config=matmul_config, backend=backend)
+    if gpu_id == "nvidia/nvidia-h100":
+        operator = bitblas.Matmul(config=matmul_config, backend="tir")
+    else:
+        operator = bitblas.Matmul(config=matmul_config, target=gpu_id)
     return operator
 
-def run_benchmark(
+def run_benchmark_bitblas(
     m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str, bitblas_op: bitblas.Matmul
 ) -> Dict[str, Any]:
     """
@@ -130,6 +87,56 @@ def run_benchmark(
         
     return result
 
+def run_benchmark_torch(m: int, n: int, k: int, W_dtype: str, A_dtype: str, out_dtype: str):
+    result = {
+        "M": m, "N": n, "K": k, "Precision": get_precision(W_dtype, A_dtype, out_dtype),
+        "Time_ms": -1.0, "TFLOPS": -1.0, "GB/s": -1.0
+    }
+
+    device = torch.device("cuda")
+
+    if W_dtype == "float16" and A_dtype == "float16":
+        a = torch.randn(m, k, device=device, dtype=torch.float16)
+        b = torch.randn(k, n, device=device, dtype=torch.float16)
+    else:
+        a = torch.randint(-10, 10, (m, k), dtype=torch.int8)
+        b = torch.randint(-10, 10, (k, n), dtype=torch.int8)
+        
+    n_warmup = 20
+    n_repeat = 100
+
+    for _ in range(n_warmup):
+        torch.matmul(a, b)
+    torch.cuda.synchronize()
+
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+
+    start_event.record()
+    for _ in range(n_repeat):
+        torch.matmul(a, b)
+    end_event.record()
+    torch.cuda.synchronize()
+
+    total_time_ms = start_event.elapsed_time(end_event)
+    avg_time_ms = total_time_ms / n_repeat
+
+    tflops = calculate_tflops(m, n, k, avg_time_ms)
+    gbps = calculate_gbps(m, n, k, W_dtype, A_dtype, out_dtype, avg_time_ms)
+
+    result.update({
+        "Time_ms": round(avg_time_ms, 5),
+        "TFLOPS/TOPS": round(tflops, 3),
+        "GB/s": round(gbps, 3)
+    })
+    
+    print("Successfully finished the test!")
+    print(f"Time_ms: {round(avg_time_ms, 5)}")
+    print(f"TFLOPS/TOPS: {round(tflops, 3)}")
+    print(f"GB/s: {round(gbps, 3)}\n")
+
+    return result
+
 # -----------------------------------------------------------------------------
 # 主执行流程
 # -----------------------------------------------------------------------------
@@ -163,51 +170,59 @@ def main():
     part_results = []
     
     # 开始迭代测试
-    for model_name, layers in config['models'].items():
-        for (W_dtype, A_dtype, out_dtype) in config['precisions']:
-            for layer_name, (n, k) in layers.items():
-                m_values = config['M']
-                
-                # 为一系列 M 获取 BitBLAS 算子
-                bitblas_op = get_bitblas_operator(gpu_id, m_values, n, k, W_dtype, A_dtype, out_dtype)
-                print("Succesfully get the operator!")
-
-                for m in m_values:
-                    print(f"--------- Running Test ---------")
-                    print(f"Model: {model_name}, Layer: {layer_name}")
-                    print(f"Shape (M, N, K): ({m}, {n}, {k})")
-                    print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})")
+    for op_name in config['operators']:
+        for model_name, layers in config['models'].items():
+            for (W_dtype, A_dtype, out_dtype) in config['precisions']:
+                if W_dtype == "int4" and op_name == "torch":
+                    continue
+                for layer_name, (n, k) in layers.items():
+                    m_values = config['M']
                     
-                    # 执行测试
-                    perf_data = run_benchmark(m, n, k, W_dtype, A_dtype, out_dtype, bitblas_op)
+                    # 为一系列 M 获取 BitBLAS 算子
+                    if op_name == "bitblas":
+                        operator = get_bitblas_operator(gpu_id, m_values, n, k, W_dtype, A_dtype, out_dtype)
+                        print("Succesfully get the operator!")
+
+                    for m in m_values:
+                        print(f"--------- Running Test ---------")
+                        print(f"Model: {model_name}, Layer: {layer_name}")
+                        print(f"Shape (M, N, K): ({m}, {n}, {k})")
+                        print(f"Precision (W_dtype, A_dtype, out_dtype): ({W_dtype}, {A_dtype}, {out_dtype})")
+                        
+                        # 执行测试
+                        if op_name == "torch":
+                            perf_data = run_benchmark_torch(m, n, k, W_dtype, A_dtype, out_dtype)
+                        else:
+                            perf_data = run_benchmark_bitblas(m, n, k, W_dtype, A_dtype, out_dtype, operator)
+                        
+                        # 补充元数据
+                        perf_data['Operator'] = op_name
+                        perf_data['GPU'] = gpu_name
+                        perf_data['Model'] = model_name
+                        perf_data['Layer_Name'] = layer_name
                     
-                    # 补充元数据
-                    perf_data['GPU'] = gpu_name
-                    perf_data['Model'] = model_name
-                    perf_data['Layer_Name'] = layer_name
-                
-                    part_results.append(perf_data)
+                        part_results.append(perf_data)
 
-            # 为每个模型的特定精度及时保存，避免崩溃
-            df = pd.DataFrame(part_results)
-            # 重新排列列的顺序，使其更易读
-            cols_order = [
-                'GPU', 'Model', 'Precision', 'Layer_Name',
-                'M', 'N', 'K', 'Time_ms', 'TFLOPS/TOPS', 'GB/s', 'Error'
-            ]
-            # 过滤掉不存在的列
-            df_cols = [col for col in cols_order if col in df.columns]
-            df = df[df_cols]
+                # 为每个模型的特定精度及时保存，避免崩溃
+                df = pd.DataFrame(part_results)
+                # 重新排列列的顺序，使其更易读
+                cols_order = [
+                    'Operator', 'GPU', 'Model', 'Precision', 'Layer_Name',
+                    'M', 'N', 'K', 'Time_ms', 'TFLOPS/TOPS', 'GB/s', 'Error'
+                ]
+                # 过滤掉不存在的列
+                df_cols = [col for col in cols_order if col in df.columns]
+                df = df[df_cols]
 
-            file_name = gpu_name + '-' + model_name + '-' + get_precision(W_dtype, A_dtype, out_dtype) + ".csv"
-            path = "data/" + file_name
-            print(f"--------- Benchmark Results For {file_name}---------")
-            print(df.to_string())
-        
-            df.to_csv(path, index=False)
-            print(f"Results saved to {path}\n")
+                file_name = f"{op_name}-{gpu_name}-{model_name}-{get_precision(W_dtype, A_dtype, out_dtype)}.csv"
+                path = "data/" + file_name
+                print(f"--------- Benchmark Results For {file_name}---------")
+                print(df.to_string())
+            
+                df.to_csv(path, index=False)
+                print(f"Results saved to {path}\n")
 
-            part_results = []
+                part_results = []
 
 if __name__ == "__main__":
     main()

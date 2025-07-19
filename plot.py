@@ -12,8 +12,8 @@ precision_dict = {
 }
 COMMAND_REGISTRY = []
 
-def get_file_name(gpu: str, model:str, precision: str) -> str:
-    return f"{gpu}-{model}-{precision}"
+def get_file_name(op_name: str, gpu: str, model:str, precision: str) -> str:
+    return f"{op_name}-{gpu}-{model}-{precision}"
 
 def register_task(name: str):
     """用于将函数注册为一个命令行命令"""
@@ -134,11 +134,12 @@ def main():
     # 导入数据
     df = pd.DataFrame()
 
-    for gpu in config['target_gpus']:
-        for model in config['models']:
-            for precision in config['precisions']:
-                part_df = pd.read_csv(f"{data_path}{get_file_name(gpu, model, precision)}.csv")
-                df = pd.concat([df, part_df])
+    for op_name in config['operators']:
+        for gpu in config['target_gpus']:
+            for model in config['models']:
+                for precision in config['precisions']:
+                    part_df = pd.read_csv(f"{data_path}{get_file_name(gpu, model, precision)}.csv")
+                    df = pd.concat([df, part_df])
 
     # 绘图
     executed = False

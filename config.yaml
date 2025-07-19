@@ -21,8 +21,8 @@ models:
 #    格式为[W_dtype, A_dtype, out_dtype]
 precisions:
   - ["float16", "float16", "float16"]  # Baseline
-  - ["int4", "float16", "float16"]     # W4A16
-  - ["int8", "int8", "int32"]          # W8A8
+  # - ["int4", "float16", "float16"]     # W4A16
+  # - ["int8", "int8", "int32"]          # W8A8
 
 # 4. 定义M的大小
 #    直接枚举M，省略了由batch size和sequence length计算得到
@@ -38,3 +38,7 @@ M:
   - 2048
   - 4096
   - 8192
+
+operators:
+  - "bitblas"
+  # - "torch"
