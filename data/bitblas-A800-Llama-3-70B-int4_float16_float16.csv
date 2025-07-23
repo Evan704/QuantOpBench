@@ -1,0 +1,45 @@
+Operator,GPU,Model,Precision,Layer_Name,M,N,K,Time_ms,TFLOPS/TOPS,GB/s
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,1,8192,8192,0.02683,5.003,1251.913
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,16,8192,8192,0.03359,63.938,1014.637
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,32,8192,8192,0.05857,73.327,590.77
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,64,8192,8192,0.07434,115.546,479.56
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,128,8192,8192,0.12093,142.059,312.142
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,256,8192,8192,0.21309,161.242,196.828
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,512,8192,8192,0.39608,173.498,127.073
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,1024,8192,8192,0.71936,191.057,93.29
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,2048,8192,8192,1.40083,196.225,71.86
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,4096,8192,8192,2.75661,199.432,60.862
+bitblas,A800,Llama-3-70B,int4_float16_float16,Q-proj,8192,8192,8192,5.30678,207.19,56.906
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,1,8192,1024,0.00727,2.308,579.437
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,16,8192,1024,0.01024,26.215,438.404
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,32,8192,1024,0.01403,38.269,341.024
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,64,8192,1024,0.02171,49.461,247.548
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,128,8192,1024,0.03205,67.002,204.473
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,256,8192,1024,0.0428,100.342,208.23
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,512,8192,1024,0.07383,116.347,184.632
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,1024,8192,1024,0.12268,140.044,188.047
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,2048,8192,1024,0.21309,161.242,196.828
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,4096,8192,1024,0.40571,169.381,196.426
+bitblas,A800,Llama-3-70B,int4_float16_float16,KV-proj,8192,8192,1024,0.77967,176.278,199.044
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,1,28672,8192,0.0769,6.109,1528.096
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,16,28672,8192,0.09452,79.524,1255.039
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,32,28672,8192,0.14694,102.3,815.276
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,64,28672,8192,0.24392,123.258,500.823
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,128,28672,8192,0.37591,159.957,337.521
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,256,28672,8192,0.69827,172.225,195.219
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,512,28672,8192,1.27181,189.115,122.023
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,1024,28672,8192,2.40937,199.652,80.078
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,2048,28672,8192,4.72433,203.642,56.82
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,4096,28672,8192,9.24764,208.069,45.355
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Up-proj,8192,28672,8192,16.08919,239.185,44.839
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,1,8192,28672,0.07578,6.199,1550.813
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,16,8192,28672,0.08151,92.211,1455.276
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,32,8192,28672,0.12851,116.973,932.207
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,64,8192,28672,0.18842,159.566,648.348
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,128,8192,28672,0.34222,175.704,370.748
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,256,8192,28672,0.63273,190.064,215.439
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,512,8192,28672,1.22583,196.208,126.599
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,1024,8192,28672,2.40957,199.635,80.071
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,2048,8192,28672,4.73774,203.066,56.659
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,4096,8192,28672,9.27795,207.389,45.207
+bitblas,A800,Llama-3-70B,int4_float16_float16,FFN Down-proj,8192,8192,28672,16.49889,233.245,43.725

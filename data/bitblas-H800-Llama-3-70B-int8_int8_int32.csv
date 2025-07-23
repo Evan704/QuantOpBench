@@ -1,0 +1,45 @@
+Operator,GPU,Model,Precision,Layer_Name,M,N,K,Time_ms,TFLOPS/TOPS,GB/s
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,1,8192,8192,0.02711,4.951,2476.903
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,16,8192,8192,0.04429,48.482,1529.863
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,32,8192,8192,0.04984,86.175,1372.785
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,64,8192,8192,0.05663,151.684,1231.323
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,128,8192,8192,0.07348,233.788,984.581
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,256,8192,8192,0.11247,305.5,689.912
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,512,8192,8192,0.15452,444.743,570.044
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,1024,8192,8192,0.29802,461.17,365.919
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,2048,8192,8192,0.57873,474.97,260.909
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,4096,8192,8192,1.14686,479.356,204.803
+bitblas,H800,Llama-3-70B,int8_int8_int32,Q-proj,8192,8192,8192,2.24457,489.854,179.39
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,1,8192,1024,0.0058,2.89,1450.962
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,16,8192,1024,0.00612,43.828,1457.889
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,32,8192,1024,0.00706,76.087,1342.113
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,64,8192,1024,0.00893,120.181,1180.974
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,128,8192,1024,0.01232,174.31,1031.988
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,256,8192,1024,0.01798,238.864,947.642
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,512,8192,1024,0.0268,320.559,958.704
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,1024,8192,1024,0.05215,329.43,824.379
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,2048,8192,1024,0.09802,350.529,791.601
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,4096,8192,1024,0.18853,364.505,778.668
+bitblas,H800,Llama-3-70B,int8_int8_int32,KV-proj,8192,8192,1024,0.36856,372.908,773.857
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,1,28672,8192,0.08278,5.675,2838.87
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,16,28672,8192,0.08511,88.314,2782.927
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,32,28672,8192,0.09491,158.388,2516.241
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,64,28672,8192,0.12183,246.776,1992.486
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,128,28672,8192,0.15375,391.094,1630.011
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,256,28672,8192,0.29236,411.346,911.009
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,512,28672,8192,0.5337,450.665,557.987
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,1024,28672,8192,1.01374,474.516,355.821
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,2048,28672,8192,1.95941,491.0,248.309
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,4096,28672,8192,3.73918,514.591,197.422
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Up-proj,8192,28672,8192,7.49691,513.317,165.603
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,1,8192,28672,0.08378,5.607,2804.202
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,16,8192,28672,0.13478,55.767,1750.024
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,32,8192,28672,0.15486,97.07,1529.42
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,64,8192,28672,0.17807,168.84,1341.142
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,128,8192,28672,0.24271,247.745,1000.157
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,256,8192,28672,0.37081,324.312,675.839
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,512,8192,28672,0.50801,473.452,524.278
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,1024,8192,28672,0.98639,487.673,301.904
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,2048,8192,28672,1.92849,498.874,187.043
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,4096,8192,28672,3.88106,495.778,125.362
+bitblas,H800,Llama-3-70B,int8_int8_int32,FFN Down-proj,8192,8192,28672,7.66245,502.227,96.34
