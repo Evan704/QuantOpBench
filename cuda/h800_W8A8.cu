@@ -102,6 +102,7 @@ C_reindex_shared_dyn_warp[((ax1_0_3_init * 16) + (ax2_0_3_init * 8)) + i] = 0.0;
     }
     for (int ax3_0_0 = 0; ax3_0_0 < 64; ++ax3_0_0) {
       __syncthreads();
+      // load next tile to shared memory
       #pragma unroll
       for (int ax0_ax1_ax2_ax3_ax4_fused_2 = 0; ax0_ax1_ax2_ax3_ax4_fused_2 < 4; ++ax0_ax1_ax2_ax3_ax4_fused_2) {
         *(int4*)(((signed char*)buf_dyn_shmem) + (((((((int)threadIdx.y) * 4096) + (((int)threadIdx.z) * 2048)) + (ax0_ax1_ax2_ax3_ax4_fused_2 * 512)) + (((int)threadIdx.x) * 16)) + 4096)) = *(int4*)(A + (((((((((int)blockIdx.y) * 524288) + (((int)threadIdx.y) * 262144)) + (((int)threadIdx.z) * 131072)) + ((ax0_ax1_ax2_ax3_ax4_fused_2 >> 1) * 65536)) + (ax3_0_0 * 1024)) + ((ax0_ax1_ax2_ax3_ax4_fused_2 & 1) * 512)) + (((int)threadIdx.x) * 16)));
@@ -111,6 +112,7 @@ C_reindex_shared_dyn_warp[((ax1_0_3_init * 16) + (ax2_0_3_init * 8)) + i] = 0.0;
         *(int4*)(((signed char*)buf_dyn_shmem) + ((((((int)threadIdx.y) * 2048) + (((int)threadIdx.z) * 1024)) + (ax0_ax1_ax2_ax3_ax4_fused_2_1 * 512)) + (((int)threadIdx.x) * 16))) = *(int4*)(B + ((((((((int)blockIdx.x) * 262144) + (((int)threadIdx.y) * 131072)) + (((int)threadIdx.z) * 65536)) + (ax3_0_0 * 1024)) + (ax0_ax1_ax2_ax3_ax4_fused_2_1 * 512)) + (((int)threadIdx.x) * 16)));
       }
       __syncthreads();
+      // double buffering
       for (int ax3_0_1 = 0; ax3_0_1 < 2; ++ax3_0_1) {
         for (int ax0 = 0; ax0 < 4; ++ax0) {
 
@@ -125,6 +127,7 @@ C_reindex_shared_dyn_warp[((ax1_0_3_init * 16) + (ax2_0_3_init * 8)) + i] = 0.0;
       : "l"((void *)((&(((signed char*)buf_dyn_shmem)[((((((int)threadIdx.y) * 4096) + (ax0 * 1024)) + (ax3_0_1 * 512)) + 4096)])) + (((int)threadIdx.x) * 16)))
     );
 #endif
+    // load data from shared memory to register
     __asm__ __volatile__(
       "ldmatrix.sync.aligned.m8n8.x4.shared.b16"
       "{%0, %1, %2, %3}, [%4];\n"
@@ -169,6 +172,7 @@ C_reindex_shared_dyn_warp[((ax1_0_3_init * 16) + (ax2_0_3_init * 8)) + i] = 0.0;
     }
   }
   __syncthreads();
+  // write back to global memory
   #pragma unroll
   for (int ax0_ax1_ax2_fused_0 = 0; ax0_ax1_ax2_fused_0 < 32; ++ax0_ax1_ax2_fused_0) {
     *(int4*)(C + ((((((((int)blockIdx.y) * 524288) + (((int)threadIdx.y) * 262144)) + (ax0_ax1_ax2_fused_0 * 8192)) + ((((int)threadIdx.x) >> 4) * 4096)) + (((int)blockIdx.x) * 64)) + ((((int)threadIdx.x) & 15) * 4))) = *(int4*)(((int*)buf_dyn_shmem) + ((((((int)threadIdx.y) * 4096) + (ax0_ax1_ax2_fused_0 * 128)) + (((int)threadIdx.x) * 4)) + 3072));
