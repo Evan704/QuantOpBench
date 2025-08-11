@@ -16,10 +16,10 @@ __global__ void gemm_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     int bx = blockIdx.x, by = blockIdx.y;
     int tx = threadIdx.x, ty = threadIdx.y, tid = ty*blockDim.x+tx;
 
-    __shared__ __align__(128) int8_t sh_A[BM][BK];
-    __shared__ __align__(128) int8_t sh_B[BN][BK];
+    __shared__ __align__(128) int8_t sh_A[BM*BK];
+    __shared__ __align__(128) int8_t sh_B[BN*BK];
 
-    int acc[RM][RN] = {0};
+    int acc[RM*RN] = {0};
 
     int8_t A_frag[RM], B_frag[RN];
 
@@ -33,12 +33,12 @@ __global__ void gemm_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
         // load A from gmem to smem
         #pragma unroll
         for(int i = 0; i < BM; i += ROW_STRIDE) {
-            GET_INT4(&sh_A[TILE_ROW_START+i][COL]) = GET_INT4(&A_tile_ptr[i*K+k]);
+            GET_INT4(&sh_A[(TILE_ROW_START+i)*BK+COL]) = GET_INT4(&A_tile_ptr[i*K+k]);
         }
         // load B from gmem to smem
         #pragma unroll
         for(int i = 0; i < BN; i += ROW_STRIDE) {
-            GET_INT4(&sh_B[TILE_ROW_START+i][COL]) = GET_INT4(&B_tile_ptr[i*K+k]);
+            GET_INT4(&sh_B[(TILE_ROW_START+i)*BK+COL]) = GET_INT4(&B_tile_ptr[i*K+k]);
         }
         __syncthreads();
         
@@ -46,11 +46,11 @@ __global__ void gemm_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
         for(int i = 0; i < BK; i++) {
             #pragma unroll
             for(int j = 0; j < RM; j++) {
-                A_frag[j] = sh_A[ty*RM+j][i];
+                A_frag[j] = sh_A[(ty*RM+j)*BK+i];
             }
             #pragma unroll
             for(int j = 0; j < RN; j++) {
-                B_frag[j] = sh_B[tx*RN+j][i];
+                B_frag[j] = sh_B[(tx*RN+j)*BK+i];
             }
 
             // calc
@@ -58,7 +58,7 @@ __global__ void gemm_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
             for(int y = 0; y < RM; y++) {
                 #pragma unroll
                 for(int x = 0; x < RN; x++) {
-                    acc[y][x] += (int)A_frag[y]*(int)B_frag[x];
+                    acc[y*RN+x] += (int)A_frag[y]*(int)B_frag[x];
                 }
             }
         }
@@ -69,7 +69,7 @@ __global__ void gemm_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     for(int y = 0; y < RM; y++) {
         #pragma unroll
         for(int x = 0; x < RN; x += 4) {
-            GET_INT4(&C[(BM*by+RM*ty+y)*N+BN*bx+RN*tx+x]) = GET_INT4(&acc[y][x]);
+            GET_INT4(&C[(BM*by+RM*ty+y)*N+BN*bx+RN*tx+x]) = GET_INT4(&acc[y*RN+x]);
         }
     }
 }

@@ -8,6 +8,7 @@
 #include"kernel/kernel_1.cuh"
 #include"kernel/kernel_2.cuh"
 #include"kernel/kernel_3.cuh"
+#include"kernel/kernel_4.cuh"
 
 #define CUDA_CHECK(call)                                         \
     do {                                                         \
@@ -58,6 +59,9 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C) {
         case 3:
             run_kernel_3(M, N, K, A, B, C);
             break;
+        case 4:
+            run_kernel_4(M, N, K, A, B, C);
+            break;
     }
 }
 
@@ -89,15 +93,27 @@ int main() {
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
 
+    
     const int num_runs = 100;
     const int warm_up = 10;
 
-    for (int i = 0; i < warm_up; ++i) {
-        run_kernel_1(M, N, K, d_A, d_B, d_C);
-    }
 
-    for(int kernel = 1; kernel <= 3; kernel++) {
+    for(int kernel = 1; kernel <= 4; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
+
+        // test
+        run_kernel(kernel, d_A, d_B, d_C);
+        cudaError_t err = cudaDeviceSynchronize();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "An error occurred during kernel execution: %s\n", cudaGetErrorString(err));
+            continue;
+        }
+
+        // warm up
+        for (int i = 0; i < warm_up; ++i) {
+            run_kernel_1(M, N, K, d_A, d_B, d_C);
+        }
+
         CUDA_CHECK(cudaEventRecord(start));
 
         for (int i = 0; i < num_runs; ++i) {
