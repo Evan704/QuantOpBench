@@ -4,21 +4,15 @@
 #include<random>
 #include<iostream>
 #include<assert.h>
+#include<cublas.h>
 
+#include"kernel/macro.h"
 #include"kernel/kernel_1.cuh"
 #include"kernel/kernel_2.cuh"
 #include"kernel/kernel_3.cuh"
 #include"kernel/kernel_4.cuh"
 #include"kernel/kernel_5.cuh"
-
-#define CUDA_CHECK(call)                                         \
-    do {                                                         \
-        cudaError_t err = call;                                  \
-        if (err != cudaSuccess) {                                \
-            fprintf(stderr, "CUDA error at %s %d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
-            exit(EXIT_FAILURE);                                  \
-        }                                                        \
-    } while (0)
+// #include"kernel/kernel_0.cuh"
 
 constexpr int M = 4096;
 constexpr int N = 4096;
@@ -49,8 +43,24 @@ bool verify_result(const int* gpu_C, const int* cpu_C, int M, int N) {
     return true;
 }
 
+cublasHandle_t cublas_handle;
+void runCublasGemm(int M, int N, int K, int8_t *A, int8_t *B, int *C) {
+  int alpha = 1, beta = 0;
+  // C(column major) = A(row major) * B(column major)
+  cublasStatus_t status = cublasGemmEx(cublas_handle, CUBLAS_OP_T, CUBLAS_OP_N, M, N, K, &alpha, A, CUDA_R_8I,
+    N, B, CUDA_R_8I, K, &beta, C, CUDA_R_32I, N, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    std::cout << "CUBLAS error: " << status << std::endl;
+    exit(1);
+  }
+}
+
 void run_kernel(int num, int8_t* A, int8_t* B, int* C) {
     switch(num) {
+        case 0:
+            runCublasGemm(M, N, K, A, B, C);
+            break;
         case 1:
             run_kernel_1(M, N, K, A, B, C);
             break;
@@ -70,6 +80,8 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C) {
 }
 
 int main() {
+    cublasCreate_v2(&cublas_handle);
+    
     // Initialize the matrix(W8A8)
     std::vector<int8_t> h_A(M * K);
     std::vector<int8_t> h_B(K * N);
@@ -85,24 +97,24 @@ int main() {
     int8_t *d_A, *d_B;
     int *d_C;
 
-    CUDA_CHECK(cudaMalloc(&d_A, h_A.size() * sizeof(int8_t)));
-    CUDA_CHECK(cudaMalloc(&d_B, h_B.size() * sizeof(int8_t)));
-    CUDA_CHECK(cudaMalloc(&d_C, h_C.size() * sizeof(int)));
+    CHECK_CUDA(cudaMalloc(&d_A, h_A.size() * sizeof(int8_t)));
+    CHECK_CUDA(cudaMalloc(&d_B, h_B.size() * sizeof(int8_t)));
+    CHECK_CUDA(cudaMalloc(&d_C, h_C.size() * sizeof(int)));
 
     // Copy the data to GPU
-    CUDA_CHECK(cudaMemcpy(d_A, h_A.data(), h_A.size() * sizeof(int8_t), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_B, h_B.data(), h_B.size() * sizeof(int8_t), cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(d_A, h_A.data(), h_A.size() * sizeof(int8_t), cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(d_B, h_B.data(), h_B.size() * sizeof(int8_t), cudaMemcpyHostToDevice));
 
     cudaEvent_t start, stop;
-    CUDA_CHECK(cudaEventCreate(&start));
-    CUDA_CHECK(cudaEventCreate(&stop));
+    CHECK_CUDA(cudaEventCreate(&start));
+    CHECK_CUDA(cudaEventCreate(&stop));
 
     
     const int num_runs = 100;
     const int warm_up = 10;
 
 
-    for(int kernel = 5; kernel <= 5; kernel++) {
+    for(int kernel = 0; kernel <= 5; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test
@@ -118,17 +130,17 @@ int main() {
             run_kernel_1(M, N, K, d_A, d_B, d_C);
         }
 
-        CUDA_CHECK(cudaEventRecord(start));
+        CHECK_CUDA(cudaEventRecord(start));
 
         for (int i = 0; i < num_runs; ++i) {
             run_kernel(kernel, d_A, d_B, d_C);
         }
 
-        CUDA_CHECK(cudaEventRecord(stop));
-        CUDA_CHECK(cudaEventSynchronize(stop));
+        CHECK_CUDA(cudaEventRecord(stop));
+        CHECK_CUDA(cudaEventSynchronize(stop));
 
         float milliseconds = 0;
-        CUDA_CHECK(cudaEventElapsedTime(&milliseconds, start, stop));
+        CHECK_CUDA(cudaEventElapsedTime(&milliseconds, start, stop));
         double latency = milliseconds/num_runs;
 
         long long flops = (long long)M*(long long)N*(long long)K*2;

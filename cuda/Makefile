@@ -1,5 +1,5 @@
 NVCC_FLAGS = -std=c++17 -O3 -DNDEBUG -w
-NVCC_LDFLAGS = -lcublas -lcuda
+NVCC_LDFLAGS = -lcublas -lcuda -lcublasLt
 OUT_DIR = out
 
 CUDA_OUTPUT_FILE = -o $(OUT_DIR)/$@
