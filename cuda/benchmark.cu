@@ -9,6 +9,7 @@
 #include"kernel/kernel_2.cuh"
 #include"kernel/kernel_3.cuh"
 #include"kernel/kernel_4.cuh"
+#include"kernel/kernel_5.cuh"
 
 #define CUDA_CHECK(call)                                         \
     do {                                                         \
@@ -62,6 +63,9 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C) {
         case 4:
             run_kernel_4(M, N, K, A, B, C);
             break;
+        case 5:
+            run_kernel_5(M, N, K, A, B, C);
+            break;
     }
 }
 
@@ -98,7 +102,7 @@ int main() {
     const int warm_up = 10;
 
 
-    for(int kernel = 1; kernel <= 4; kernel++) {
+    for(int kernel = 5; kernel <= 5; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test
