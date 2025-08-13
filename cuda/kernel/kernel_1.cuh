@@ -19,26 +19,27 @@ __global__ void gemm_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     __shared__ __align__(128) int8_t sh_A[BM*BK];
     __shared__ __align__(128) int8_t sh_B[BN*BK];
 
-    int acc[RM*RN] = {0};
+    int acc[RM*RN];
+    memset(acc, 0, RM*RN*sizeof(int));
 
     int8_t A_frag[RM], B_frag[RN];
 
     const int TILE_ROW_START = tid/THREADS_PER_ROW;
     const int COL = tid%THREADS_PER_ROW*16;
 
-    int8_t* A_tile_ptr = A+(TILE_ROW_START+by*BM)*K+COL;
-    int8_t* B_tile_ptr = B+(TILE_ROW_START+bx*BN)*K+COL;
+    int8_t* A_tile_ptr = A+by*BM*K;
+    int8_t* B_tile_ptr = B+bx*BN*K;
 
     for(int k = 0; k < K; k += BK) {
         // load A from gmem to smem
         #pragma unroll
         for(int i = 0; i < BM; i += ROW_STRIDE) {
-            GET_INT4(&sh_A[(TILE_ROW_START+i)*BK+COL]) = GET_INT4(&A_tile_ptr[i*K+k]);
+            GET_INT4(&sh_A[(TILE_ROW_START+i)*BK+COL]) = GET_INT4(&A_tile_ptr[(TILE_ROW_START+i)*K+COL+k]);
         }
         // load B from gmem to smem
         #pragma unroll
         for(int i = 0; i < BN; i += ROW_STRIDE) {
-            GET_INT4(&sh_B[(TILE_ROW_START+i)*BK+COL]) = GET_INT4(&B_tile_ptr[i*K+k]);
+            GET_INT4(&sh_B[(TILE_ROW_START+i)*BK+COL]) = GET_INT4(&B_tile_ptr[(TILE_ROW_START+i)*K+COL+k]);
         }
         __syncthreads();
         
@@ -62,6 +63,7 @@ __global__ void gemm_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
                 }
             }
         }
+        __syncthreads();
     }
 
     // write back to gmem

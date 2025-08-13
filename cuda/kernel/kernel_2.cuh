@@ -73,6 +73,7 @@ __global__ void gemm_tile_trans(int M, int N, int K, int8_t* A, int8_t* B, int* 
                 }
             }
         }
+        __syncthreads();
     }
 
     // write back to gmem

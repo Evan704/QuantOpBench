@@ -16,16 +16,17 @@
 #include"kernel/kernel_0.cuh"
 #include"kernel/kernel_6.cuh"
 
-constexpr int M = 4;
-constexpr int N = 4;
-constexpr int K = 4;
-// constexpr int M = 4096;
-// constexpr int N = 4096;
-// constexpr int K = 4096;
+// constexpr int M = 4;
+// constexpr int N = 4;
+// constexpr int K = 4;
+constexpr int M = 4096;
+constexpr int N = 4096;
+constexpr int K = 4096;
 
 void gemm_cpu(int8_t* A, int8_t* B, int* C) {
     for(int i = 0; i < M; i++) {
         for(int j = 0; j < N; j++) {
+            C[i*N+j] = 0;
             for(int k = 0; k < K; k++) {
                 C[i*N+j] += (int)A[i*K+k]*(int)B[j*K+k];
             }
@@ -59,7 +60,7 @@ void runCublasGemm(int M, int N, int K, int8_t *A, int8_t *B, int *C) {
   }
 }
 
-void run_kernel(int num, int8_t* A, int8_t* B, int* C) {
+void run_kernel(int num, int8_t* A, int8_t* B, int* C, bool dbg) {
     switch(num) {
         case 0:
             runCublasGemm(M, N, K, A, B, C);
@@ -79,6 +80,27 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C) {
             break;
         case 5:
             run_kernel_5(M, N, K, A, B, C);
+            break;
+        case 6:
+            if(dbg) {
+                int dbg[M/128*N/128*6];
+                memset(dbg, 0, sizeof(int)*M/128*N/128*6);
+                int* d_dbg;
+                CHECK_CUDA(cudaMalloc(&d_dbg, M/128*N/128*6*sizeof(int)));
+                CHECK_CUDA(cudaMemcpy(d_dbg, dbg, M/128*N/128*6*sizeof(int), cudaMemcpyHostToDevice));
+                run_kernel_6(M, N, K, A, B, C, d_dbg);
+                CHECK_CUDA(cudaMemcpy(dbg, d_dbg, M/128*N/128*6*sizeof(int), cudaMemcpyDeviceToHost));
+                int sumLoad = 0, cntLoad = 0;
+                int sumCompute = 0, cntCompute = 0;
+                int sumStore = 0, cntStore = 0;
+                for(int i = 0; i < M/128*N/128*6; i += 6) {
+                    sumLoad += dbg[i]; cntLoad += dbg[i+1];
+                    sumCompute += dbg[i+2]; cntCompute += dbg[i+3];
+                    sumStore += dbg[i+4]; cntStore += dbg[i+5];
+                }
+                printf("Load: %f\nCompute: %f\nStore: %f\n", (float)sumLoad/cntLoad, (float)sumCompute/cntCompute, (float)sumStore/cntStore);
+            }
+            else run_kernel_6(M, N, K, A, B, C, nullptr);
             break;
     }
 }
@@ -100,6 +122,7 @@ int main() {
     for (size_t i = 0; i < h_A.size(); ++i) h_A[i] = static_cast<int8_t>(distrib(gen));
     for (size_t i = 0; i < h_B.size(); ++i) h_B[i] = static_cast<int8_t>(distrib(gen));
 
+
     int8_t *d_A, *d_B;
     int *d_C;
 
@@ -114,19 +137,19 @@ int main() {
     cudaEvent_t start, stop;
     CHECK_CUDA(cudaEventCreate(&start));
     CHECK_CUDA(cudaEventCreate(&stop));
-    
+
     const int num_runs = 100;
     const int warm_up = 10;
 
-    run_kernel(0, d_A, d_B, d_C);
+    run_kernel(0, d_A, d_B, d_C, false);
     CHECK_CUDA(cudaMemcpy(h_C_ref.data(), d_C, h_C_ref.size()*sizeof(int), cudaMemcpyDeviceToHost));
 
-    for(int kernel = 0; kernel <= 0; kernel++) {
+    for(int kernel = 0; kernel <= 6; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test
         if(kernel > 0) {
-            run_kernel(kernel, d_A, d_B, d_C);
+            run_kernel(kernel, d_A, d_B, d_C, true);
             cudaError_t err = cudaDeviceSynchronize();
             if (err != cudaSuccess) {
                 fprintf(stderr, "An error occurred during kernel execution: %s\n", cudaGetErrorString(err));
@@ -138,13 +161,13 @@ int main() {
 
         // warm up
         for (int i = 0; i < warm_up; ++i) {
-            run_kernel(0, d_A, d_B, d_C);
+            run_kernel(0, d_A, d_B, d_C, false);
         }
 
         CHECK_CUDA(cudaEventRecord(start));
 
         for (int i = 0; i < num_runs; ++i) {
-            run_kernel(kernel, d_A, d_B, d_C);
+            run_kernel(kernel, d_A, d_B, d_C, false);
         }
 
         CHECK_CUDA(cudaEventRecord(stop));

@@ -12,12 +12,13 @@ namespace cde = cuda::device::experimental;
 // Copied from https://github.com/pranjalssh/fast.cu
 __device__ static inline uint64_t matrix_descriptor_encode(uint64_t x) { return (((x) & 0x3FFFF) >> 0x4); }
 
+template<const int BK, const int elementSize>
 __device__ uint64_t make_smem_desc(int8_t* ptr) {
     uint32_t addr = static_cast<uint32_t>(__cvta_generic_to_shared(ptr));
     uint64_t desc = 0x0000000000000000;
     desc |= matrix_descriptor_encode(addr);
     desc |= matrix_descriptor_encode((uint64_t)16) << 16;
-    desc |= matrix_descriptor_encode((uint64_t)1024) << 32;
+    desc |= matrix_descriptor_encode((uint64_t)BK*8*elementSize) << 32;
     desc |= 1llu << 62; // 128B swizzle
     return desc;
 }
@@ -36,10 +37,10 @@ __device__ void warpgroup_wait() {
     asm volatile("wgmma.wait_group.sync.aligned %0;\n" ::"n"(N) : "memory");
 }
 
-template<const int ScaleD>
+template<const int ScaleD, const int BK, const int elementSize>
 __device__ void wgmma_m64n64k32(int* d, int8_t* As, int8_t* Bs) {
-    uint64_t desc_A = make_smem_desc(As);
-    uint64_t desc_B = make_smem_desc(Bs);
+    uint64_t desc_A = make_smem_desc<BK, elementSize>(As);
+    uint64_t desc_B = make_smem_desc<BK, elementSize>(Bs);
     __asm__ __volatile__(
         "wgmma.mma_async.sync.aligned.m64n64k32.s32.s8.s8 "
         "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
@@ -93,9 +94,9 @@ __global__ void gemm_wgmma(int M, int N, int K, CUtensorMap* tensorMapA, CUtenso
     barrier::arrival_token tokenA, tokenB;
     for(int bkIt = 0; bkIt < BKITER; bkIt++) {
         if(threadIdx.x == 0) {
-            cde::cp_async_bulk_tensor_2d_global_to_shared(&As[0], tensorMapA, bkIt*BK, BLOCK_TILE_ROW*BM, barA);
+            cde::cp_async_bulk_tensor_2d_global_to_shared(As, tensorMapA, bkIt*BK, BLOCK_TILE_ROW*BM, barA);
             tokenA = cuda::device::barrier_arrive_tx(barA, 1, sizeof(As));
-            cde::cp_async_bulk_tensor_2d_global_to_shared(&Bs[0], tensorMapB, bkIt*BK, BLOCK_TILE_COL*BN, barB);
+            cde::cp_async_bulk_tensor_2d_global_to_shared(Bs, tensorMapB, bkIt*BK, BLOCK_TILE_COL*BN, barB);
             tokenB = cuda::device::barrier_arrive_tx(barB, 1, sizeof(Bs));
         }
         else {
@@ -109,7 +110,7 @@ __global__ void gemm_wgmma(int M, int N, int K, CUtensorMap* tensorMapA, CUtenso
         warpgroup_arrive();
         #pragma unroll
         for(int k_inner = 0; k_inner < BK/WGMMA_K; k_inner++) {
-            wgmma_m64n64k32<0>(d, &As[k_inner*WGMMA_K], &Bs[k_inner*WGMMA_K]);
+            wgmma_m64n64k32<1, BK, sizeof(int8_t)>(d, &As[k_inner*WGMMA_K], &Bs[k_inner*WGMMA_K]);
         }
         warpgroup_commit_batch();
         warpgroup_wait<0>(); // 0表示等待所有任务完成
@@ -119,7 +120,6 @@ __global__ void gemm_wgmma(int M, int N, int K, CUtensorMap* tensorMapA, CUtenso
     int row = warp*16+lane/4, col = (lane%4)*2;
     int* C_ptr = C+BLOCK_TILE_ROW*BM*N+BLOCK_TILE_COL*BN;
 
-    #pragma unroll
     for(int i = 0; i < WGMMA_N/8; i++) {
         GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d[i*4]);
         GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d[i*4+2]);
@@ -142,6 +142,7 @@ void create_tensor_map(CUtensorMap* tma_map, int8_t* src, int height, int width)
         2, (void*)src, globalDim, globalStride+1, boxDim, boxStride,
         CU_TENSOR_MAP_INTERLEAVE_NONE,
         CU_TENSOR_MAP_SWIZZLE_128B,
+        // CU_TENSOR_MAP_SWIZZLE_NONE,
         CU_TENSOR_MAP_L2_PROMOTION_NONE,
         CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
     );

@@ -35,7 +35,7 @@ __global__ void gemm_warp_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C
     __shared__ int8_t Bs[BK*BN];
 
     A += by*BM*K;
-    B += bx*BN;
+    B += bx*BN*K;
     C += (by*BM+warpRow*WM)*N+bx*BN+warpCol*WN;
 
     // 用INT4加载，一次加载16个int8
@@ -55,6 +55,7 @@ __global__ void gemm_warp_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C
 
     #pragma unroll
     for(int bkIdx = 0; bkIdx < K; bkIdx += BK) {
+        // 在Smem中A和B均以K主序存储
         // Load A from gmem to smem
         #pragma unroll
         for(int i = 0; i+rowStrideA <= BM; i += rowStrideA) {
@@ -68,7 +69,7 @@ __global__ void gemm_warp_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C
 
         // Load B from gmem to smem
         #pragma unroll
-        for(int i = 0; i+rowStrideB <= BK; i += rowStrideB) {
+        for(int i = 0; i+rowStrideB <= BN; i += rowStrideB) {
             // GET_INT4(&Bs[(innerRowB+i)*BN+innerColB*16]) = GET_INT4(&B[(innerRowB+i)*N+innerColB*16]);
             int8_t tmp[16];
             GET_INT4(&tmp) = GET_INT4(&B[(innerRowB+i)*K+innerColB*16]);
@@ -116,7 +117,7 @@ __global__ void gemm_warp_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C
         }
 
         A += BK;
-        B += BK*N;
+        B += BK;
 
         __syncthreads();
     }
