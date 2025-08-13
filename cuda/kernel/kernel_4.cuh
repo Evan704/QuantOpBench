@@ -42,9 +42,10 @@ __global__ void gemm_warp_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C
     const int innerRowA = threadIdx.x/(BK/16);
     const int innerColA = threadIdx.x%(BK/16);
     constexpr int rowStrideA = (THREADS_NUM*16)/BK;
-    const int innerRowB = threadIdx.x/(BN/16);
-    const int innerColB = threadIdx.x%(BN/16);
-    constexpr int rowStrideB = (THREADS_NUM*16)/BN;
+    // B以列主序存储
+    const int innerRowB = threadIdx.x/(BK/16);
+    const int innerColB = threadIdx.x%(BK/16);
+    constexpr int rowStrideB = (THREADS_NUM*16)/BK;
 
     // 每个线程处理WMITER*WNITER个小矩阵块, 每块TM*TN
     int threadResults[WMITER*WNITER*TM*TN] = {0};
@@ -68,7 +69,13 @@ __global__ void gemm_warp_tile(int M, int N, int K, int8_t* A, int8_t* B, int* C
         // Load B from gmem to smem
         #pragma unroll
         for(int i = 0; i+rowStrideB <= BK; i += rowStrideB) {
-            GET_INT4(&Bs[(innerRowB+i)*BN+innerColB*16]) = GET_INT4(&B[(innerRowB+i)*N+innerColB*16]);
+            // GET_INT4(&Bs[(innerRowB+i)*BN+innerColB*16]) = GET_INT4(&B[(innerRowB+i)*N+innerColB*16]);
+            int8_t tmp[16];
+            GET_INT4(&tmp) = GET_INT4(&B[(innerRowB+i)*K+innerColB*16]);
+            #pragma unroll
+            for(int j = 0; j < 16; j++) {
+                Bs[(innerColB+j)*BN+innerRowB+i] = tmp[j];
+            }
         }
 
         __syncthreads();

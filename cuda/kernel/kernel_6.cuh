@@ -5,7 +5,7 @@
 #include<cuda/pipeline>
 #include<cuda.h>
 
-namespace K5 {
+namespace K6 {
 using barrier = cuda::barrier<cuda::thread_scope_block>;
 namespace cde = cuda::device::experimental;
 
@@ -61,21 +61,70 @@ __device__ void wgmma_m64n64k32(int* d, int8_t* As, int8_t* Bs) {
     );
 }
 
-// 默认分块大小等于WGMMA大小
+template<const int ScaleD>
+__device__ void wgmma_m64n128k32(int* d, int8_t* As, int8_t* Bs) {
+    uint64_t desc_A = make_smem_desc(As);
+    uint64_t desc_B = make_smem_desc(Bs);
+    __asm__ __volatile__(
+        "wgmma.mma_async.sync.aligned.m64n128k32.s32.s8.s8 "
+        "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+        " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+        " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+        " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+        " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+        " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+        " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+        " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
+        " %64,"
+        " %65,"
+        " %66;"
+        : "+r"(d[0]), "+r"(d[1]), "+r"(d[2]), "+r"(d[3]), 
+        "+r"(d[4]), "+r"(d[5]), "+r"(d[6]), "+r"(d[7]), 
+        "+r"(d[8]), "+r"(d[9]), "+r"(d[10]), "+r"(d[11]), 
+        "+r"(d[12]), "+r"(d[13]), "+r"(d[14]), "+r"(d[15]), 
+        "+r"(d[16]), "+r"(d[17]), "+r"(d[18]), "+r"(d[19]), 
+        "+r"(d[20]), "+r"(d[21]), "+r"(d[22]), "+r"(d[23]), 
+        "+r"(d[24]), "+r"(d[25]), "+r"(d[26]), "+r"(d[27]), 
+        "+r"(d[28]), "+r"(d[29]), "+r"(d[30]), "+r"(d[31]),
+        "+r"(d[32]), "+r"(d[33]), "+r"(d[34]), "+r"(d[35]), 
+        "+r"(d[36]), "+r"(d[37]), "+r"(d[38]), "+r"(d[39]), 
+        "+r"(d[40]), "+r"(d[41]), "+r"(d[42]), "+r"(d[43]), 
+        "+r"(d[44]), "+r"(d[45]), "+r"(d[46]), "+r"(d[47]), 
+        "+r"(d[48]), "+r"(d[49]), "+r"(d[50]), "+r"(d[51]), 
+        "+r"(d[52]), "+r"(d[53]), "+r"(d[54]), "+r"(d[55]), 
+        "+r"(d[56]), "+r"(d[57]), "+r"(d[58]), "+r"(d[59]), 
+        "+r"(d[60]), "+r"(d[61]), "+r"(d[62]), "+r"(d[63])
+        : "l"(desc_A), "l"(desc_B), "n"((int32_t)(ScaleD))
+    );
+}
+
+template<const int WGMMA_N, const int ScaleD>
+__device__ void wgmma(int* d, int8_t* As, int8_t* Bs) {
+    static_assert(WGMMA_N == 64 || WGMMA_N == 128);
+    if constexpr(WGMMA_N == 64) {
+        wgmma_m64n64k32<ScaleD>(d, As, Bs);
+    }
+    else if constexpr(WGMMA_N == 128) {
+        wgmma_m64n128k32<ScaleD>(d, As, Bs);
+    }
+}
+
+// 默认BN与WGMMA_N相同
 template<
+    const int BM,
     const int BK,
     const int WGMMA_M,
     const int WGMMA_N,
     const int WGMMA_K,
     const int THREADS_NUM,
-    const int BM = WGMMA_M,
     const int BN = WGMMA_N
 >
-__global__ void gemm_wgmma(int M, int N, int K, CUtensorMap* tensorMapA, CUtensorMap* tensorMapB, int* C) {
+__global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, CUtensorMap* tensorMapA, CUtensorMap* tensorMapB, int* C) {
     __shared__ alignas(128) int8_t As[BM*BK];
     __shared__ alignas(128) int8_t Bs[BN*BK];
 
-    int d[WGMMA_N/2];
+    // 每次WGMMA存储WGMMA_N*4/8个结果
+    int d[BM/WGMMA_M*WGMMA_N/2];
     memset(d, 0, sizeof(d));
 
     const int BKITER = K/BK;
@@ -108,21 +157,30 @@ __global__ void gemm_wgmma(int M, int N, int K, CUtensorMap* tensorMapA, CUtenso
 
         warpgroup_arrive();
         #pragma unroll
-        for(int k_inner = 0; k_inner < BK/WGMMA_K; k_inner++) {
-            wgmma_m64n64k32<0>(d, &As[k_inner*WGMMA_K], &Bs[k_inner*WGMMA_K]);
+        for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
+            int8_t* As_ptr = As+m_it*WGMMA_M*BK;
+            #pragma unroll
+            for(int k_it = 0; k_it < BK/WGMMA_K; k_it++) {
+                wgmma<WGMMA_N, 0>(&d[m_it*WGMMA_N/2], &As_ptr[k_it*WGMMA_K], &Bs[k_it*WGMMA_K]);
+            }
         }
         warpgroup_commit_batch();
         warpgroup_wait<0>(); // 0表示等待所有任务完成
     }
 
-    int lane = threadIdx.x%32, warp = threadIdx.x/32;
-    int row = warp*16+lane/4, col = (lane%4)*2;
+    const int lane = threadIdx.x%32, warp = threadIdx.x/32;
+    const int row = warp*16+lane/4, col = (lane%4)*2;
     int* C_ptr = C+BLOCK_TILE_ROW*BM*N+BLOCK_TILE_COL*BN;
+    int* d_ptr = d;
 
-    #pragma unroll
-    for(int i = 0; i < WGMMA_N/8; i++) {
-        GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d[i*4]);
-        GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d[i*4+2]);
+    for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
+        #pragma unroll
+        for(int i = 0; i < WGMMA_N/8; i++) {
+            GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d_ptr[i*4]);
+            GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d_ptr[i*4+2]);
+        }
+        C_ptr += WGMMA_M*BK;
+        d_ptr += WGMMA_M*WGMMA_N/2;
     }
 }
 
@@ -159,10 +217,11 @@ __host__ CUtensorMap* allocate_tensor_map(int8_t* src, int height, int width) {
     return d_tma_map;
 }
 
-void run_kernel_5(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
-    constexpr int BM = 64, BN = 64, BK = 128;
+void run_kernel_6(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
+    constexpr int BM = 128, BN = 128, BK = 128;
     static_assert(BK%128 == 0); // Swizzle要求行跨度必须为Swizzle尺寸的倍数
     constexpr int THREADS_NUM = 128;
+
     if(!d_tma_map_A || M != _prev_m || N != _prev_n || K != _prev_k) {
         d_tma_map_A = allocate_tensor_map<BM, BK>(A, M, K);
         d_tma_map_B = allocate_tensor_map<BN, BK>(B, N, K);
@@ -171,9 +230,9 @@ void run_kernel_5(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
         _prev_k = K;
     }
 
-    gemm_wgmma<BK, 64, 64, 32, THREADS_NUM>
+    gemm_wgmma<BM, BK, 64, 128, 32, THREADS_NUM>
     <<<M*N/BN/BM, THREADS_NUM>>>(M, N, K, d_tma_map_A, d_tma_map_B, C);
 }
 }
 
-using K5::run_kernel_5;
+using K6::run_kernel_6;

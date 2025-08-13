@@ -4,7 +4,8 @@
 #include<random>
 #include<iostream>
 #include<assert.h>
-#include<cublas.h>
+#include<cublas_v2.h>
+#include<iomanip>
 
 #include"kernel/macro.h"
 #include"kernel/kernel_1.cuh"
@@ -12,29 +13,31 @@
 #include"kernel/kernel_3.cuh"
 #include"kernel/kernel_4.cuh"
 #include"kernel/kernel_5.cuh"
-// #include"kernel/kernel_0.cuh"
+#include"kernel/kernel_0.cuh"
+#include"kernel/kernel_6.cuh"
 
-constexpr int M = 4096;
-constexpr int N = 4096;
-constexpr int K = 4096;
+constexpr int M = 4;
+constexpr int N = 4;
+constexpr int K = 4;
+// constexpr int M = 4096;
+// constexpr int N = 4096;
+// constexpr int K = 4096;
 
-void gemm_cpu_reference(const int8_t* A, const int8_t* B, int* C) {
-    for (int m = 0; m < M; ++m) {
-        for (int n = 0; n < N; ++n) {
-            int32_t acc = 0;
-            for (int k = 0; k < K; ++k) {
-                acc += static_cast<int32_t>(A[m*K+k])*static_cast<int32_t>(B[n*K+k]);
+void gemm_cpu(int8_t* A, int8_t* B, int* C) {
+    for(int i = 0; i < M; i++) {
+        for(int j = 0; j < N; j++) {
+            for(int k = 0; k < K; k++) {
+                C[i*N+j] += (int)A[i*K+k]*(int)B[j*K+k];
             }
-            C[m*N+n] = acc;
         }
     }
 }
 
-bool verify_result(const int* gpu_C, const int* cpu_C, int M, int N) {
+bool verify_result(const int* C, const int* C_ref, int M, int N) {
     for (int i = 0; i < N; ++i) {
-        if (gpu_C[i] != cpu_C[i]) {
-            std::cerr << "Verification FAILED at index " << i << "!" << std::endl;
-            std::cerr << "GPU result: " << gpu_C[i] << ", CPU reference: " << cpu_C[i] << std::endl;
+        if (C[i] != C_ref[i]) {
+            std::cout << "Verification FAILED at index " << i << "!" << std::endl;
+            std::cout << "result: " << C[i] << ", reference: " << C_ref[i] << std::endl;
             return false;
         }
     }
@@ -47,8 +50,8 @@ cublasHandle_t cublas_handle;
 void runCublasGemm(int M, int N, int K, int8_t *A, int8_t *B, int *C) {
   int alpha = 1, beta = 0;
   // C(column major) = A(row major) * B(column major)
-  cublasStatus_t status = cublasGemmEx(cublas_handle, CUBLAS_OP_T, CUBLAS_OP_N, M, N, K, &alpha, A, CUDA_R_8I,
-    N, B, CUDA_R_8I, K, &beta, C, CUDA_R_32I, N, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+  cublasStatus_t status = cublasGemmEx(cublas_handle, CUBLAS_OP_T, CUBLAS_OP_N, N, M, K, &alpha, B, CUDA_R_8I,
+    K, A, CUDA_R_8I, K, &beta, C, CUDA_R_32I, N, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
 
   if (status != CUBLAS_STATUS_SUCCESS) {
     std::cout << "CUBLAS error: " << status << std::endl;
@@ -60,6 +63,7 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C) {
     switch(num) {
         case 0:
             runCublasGemm(M, N, K, A, B, C);
+            // run_kernel_0(A, B, C);
             break;
         case 1:
             run_kernel_1(M, N, K, A, B, C);
@@ -81,11 +85,13 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C) {
 
 int main() {
     cublasCreate_v2(&cublas_handle);
-    
+    // K0::init(M, N, K);
+
     // Initialize the matrix(W8A8)
+    // A is row major, B is col major
     std::vector<int8_t> h_A(M * K);
     std::vector<int8_t> h_B(K * N);
-    std::vector<int> h_C(M * N);
+    std::vector<int> h_C(M * N), h_C_ref(M*N);
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -108,26 +114,31 @@ int main() {
     cudaEvent_t start, stop;
     CHECK_CUDA(cudaEventCreate(&start));
     CHECK_CUDA(cudaEventCreate(&stop));
-
     
     const int num_runs = 100;
     const int warm_up = 10;
 
+    run_kernel(0, d_A, d_B, d_C);
+    CHECK_CUDA(cudaMemcpy(h_C_ref.data(), d_C, h_C_ref.size()*sizeof(int), cudaMemcpyDeviceToHost));
 
-    for(int kernel = 0; kernel <= 5; kernel++) {
+    for(int kernel = 0; kernel <= 0; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test
-        run_kernel(kernel, d_A, d_B, d_C);
-        cudaError_t err = cudaDeviceSynchronize();
-        if (err != cudaSuccess) {
-            fprintf(stderr, "An error occurred during kernel execution: %s\n", cudaGetErrorString(err));
-            continue;
+        if(kernel > 0) {
+            run_kernel(kernel, d_A, d_B, d_C);
+            cudaError_t err = cudaDeviceSynchronize();
+            if (err != cudaSuccess) {
+                fprintf(stderr, "An error occurred during kernel execution: %s\n", cudaGetErrorString(err));
+                continue;
+            }
+            CHECK_CUDA(cudaMemcpy(h_C.data(), d_C, h_C.size()*sizeof(int), cudaMemcpyDeviceToHost));
+            if(!verify_result(h_C.data(), h_C_ref.data(), M, N)) continue;
         }
 
         // warm up
         for (int i = 0; i < warm_up; ++i) {
-            run_kernel_1(M, N, K, d_A, d_B, d_C);
+            run_kernel(0, d_A, d_B, d_C);
         }
 
         CHECK_CUDA(cudaEventRecord(start));

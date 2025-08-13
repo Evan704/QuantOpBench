@@ -5,3 +5,4 @@ test.py
 __pycache__
 test
 .vscode
+cuda/out
