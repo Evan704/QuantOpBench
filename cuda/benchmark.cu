@@ -15,6 +15,7 @@
 #include"kernel/kernel_5.cuh"
 #include"kernel/kernel_0.cuh"
 #include"kernel/kernel_6.cuh"
+#include"kernel/kernel_7.cuh"
 
 // constexpr int M = 4;
 // constexpr int N = 4;
@@ -98,16 +99,18 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C, bool dbg) {
                     sumCompute += dbg[i+2]; cntCompute += dbg[i+3];
                     sumStore += dbg[i+4]; cntStore += dbg[i+5];
                 }
-                printf("Load: %f\nCompute: %f\nStore: %f\n", (float)sumLoad/cntLoad, (float)sumCompute/cntCompute, (float)sumStore/cntStore);
+                printf("Load: %.2f\nCompute: %.2f\nStore: %.2f\n", (float)sumLoad/cntLoad, (float)sumCompute/cntCompute, (float)sumStore/cntStore);
             }
             else run_kernel_6(M, N, K, A, B, C, nullptr);
+            break;
+        case 7:
+            run_kernel_7(M, N, K, A, B, C);
             break;
     }
 }
 
 int main() {
     cublasCreate_v2(&cublas_handle);
-    // K0::init(M, N, K);
 
     // Initialize the matrix(W8A8)
     // A is row major, B is col major
@@ -122,7 +125,6 @@ int main() {
     for (size_t i = 0; i < h_A.size(); ++i) h_A[i] = static_cast<int8_t>(distrib(gen));
     for (size_t i = 0; i < h_B.size(); ++i) h_B[i] = static_cast<int8_t>(distrib(gen));
 
-
     int8_t *d_A, *d_B;
     int *d_C;
 
@@ -134,6 +136,8 @@ int main() {
     CHECK_CUDA(cudaMemcpy(d_A, h_A.data(), h_A.size() * sizeof(int8_t), cudaMemcpyHostToDevice));
     CHECK_CUDA(cudaMemcpy(d_B, h_B.data(), h_B.size() * sizeof(int8_t), cudaMemcpyHostToDevice));
 
+    // K0::init(M, N, K, d_A, d_B, d_C);
+
     cudaEvent_t start, stop;
     CHECK_CUDA(cudaEventCreate(&start));
     CHECK_CUDA(cudaEventCreate(&stop));
@@ -141,20 +145,22 @@ int main() {
     const int num_runs = 100;
     const int warm_up = 10;
 
-    run_kernel(0, d_A, d_B, d_C, false);
+    // run_kernel(0, d_A, d_B, d_C, false);
+    runCublasGemm(M, N, K, d_A, d_B, d_C);
     CHECK_CUDA(cudaMemcpy(h_C_ref.data(), d_C, h_C_ref.size()*sizeof(int), cudaMemcpyDeviceToHost));
 
-    for(int kernel = 0; kernel <= 6; kernel++) {
+    double cublas_tops;
+
+    for(int kernel = 0; kernel <= 7; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test
         if(kernel > 0) {
+            for(int i = 0; i < M*N; i++) h_C[i] = 0;
+            CHECK_CUDA(cudaMemcpy(d_C, h_C.data(), h_C.size()*sizeof(int), cudaMemcpyHostToDevice));
             run_kernel(kernel, d_A, d_B, d_C, true);
-            cudaError_t err = cudaDeviceSynchronize();
-            if (err != cudaSuccess) {
-                fprintf(stderr, "An error occurred during kernel execution: %s\n", cudaGetErrorString(err));
-                continue;
-            }
+            CHECK_CUDA(cudaDeviceSynchronize());
+            CHECK_CUDA(cudaGetLastError());
             CHECK_CUDA(cudaMemcpy(h_C.data(), d_C, h_C.size()*sizeof(int), cudaMemcpyDeviceToHost));
             if(!verify_result(h_C.data(), h_C_ref.data(), M, N)) continue;
         }
@@ -177,12 +183,15 @@ int main() {
         CHECK_CUDA(cudaEventElapsedTime(&milliseconds, start, stop));
         double latency = milliseconds/num_runs;
 
-        long long flops = (long long)M*(long long)N*(long long)K*2;
-        double tflops = (double)flops/latency/1e9;
+        long long ops = (long long)M*(long long)N*(long long)K*2;
+        double tops = (double)ops/latency/1e9;
+
+        if(kernel == 0) cublas_tops = tops;
         
         std::cout << "----------------------------------------" << std::endl;
         std::cout << "Latency: " << latency << " ms" << std::endl;
-        std::cout << "TFLOPS: " << tflops << std::endl;
+        std::cout << "TOPS: " << tops << std::endl;
+        printf("Performance: %.2f%% cuBLAS\n", (double)tops/cublas_tops*100);
         std::cout << "----------------------------------------" << std::endl << std::endl;
     }
     
