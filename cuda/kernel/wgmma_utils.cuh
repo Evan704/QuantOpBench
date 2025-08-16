@@ -158,3 +158,32 @@ __device__ void wgmma(int* d, int8_t* As, int8_t* Bs) {
         wgmma_m64n224k32<ScaleD>(d, As, Bs);
     }
 }
+
+template<const int BH, const int BW>
+void create_tensor_map(CUtensorMap* tma_map, int8_t* src, int height, int width) {
+    uint64_t globalDim[5] = {(uint64_t)width, (uint64_t)height, 1, 1, 1};
+    uint64_t globalStride[5] = {sizeof(int8_t), sizeof(int8_t)*width, 0, 0, 0};
+    uint32_t boxDim[5] = {(uint32_t)BW, (uint32_t)BH, 1, 1, 1};
+    uint32_t boxStride[5] = {1, 1, 1, 1, 1};
+    CUresult result = cuTensorMapEncodeTiled(
+        tma_map,
+        CU_TENSOR_MAP_DATA_TYPE_UINT8,
+        2, (void*)src, globalDim, globalStride+1, boxDim, boxStride,
+        CU_TENSOR_MAP_INTERLEAVE_NONE,
+        CU_TENSOR_MAP_SWIZZLE_128B,
+        CU_TENSOR_MAP_L2_PROMOTION_NONE,
+        CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
+    );
+
+    assert(result == CUDA_SUCCESS);
+}
+
+template<const int BH, const int BW>
+__host__ CUtensorMap* allocate_tensor_map(int8_t* src, int height, int width) {
+    CUtensorMap* d_tma_map;
+    cudaMalloc(&d_tma_map, sizeof(CUtensorMap));
+    CUtensorMap h_tma_map;
+    create_tensor_map<BH, BW>(&h_tma_map, src, height, width);
+    cudaMemcpy(d_tma_map, &h_tma_map, sizeof(CUtensorMap), cudaMemcpyHostToDevice);
+    return d_tma_map;
+}

@@ -18,6 +18,7 @@
 #include"kernel/kernel_7.cuh"
 #include"kernel/kernel_8.cuh"
 #include"kernel/kernel_9.cuh"
+#include"kernel/kernel_10.cuh"
 
 // constexpr int M = 4;
 // constexpr int N = 4;
@@ -38,11 +39,13 @@ void gemm_cpu(int8_t* A, int8_t* B, int* C) {
 }
 
 bool verify_result(const int* C, const int* C_ref, int M, int N) {
-    for (int i = 0; i < N; ++i) {
-        if (C[i] != C_ref[i]) {
-            std::cout << "Verification FAILED at index " << i << "!" << std::endl;
-            std::cout << "result: " << C[i] << ", reference: " << C_ref[i] << std::endl;
-            return false;
+    for (int i = 0; i < M; i++) {
+        for(int j = 0; j < N; j++) {
+            if (C[i*N+j] != C_ref[i*N+j]) {
+                std::cout << "Verification FAILED at index (" << i << ", " << j << ")!" << std::endl;
+                std::cout << "result: " << C[i*N+j] << ", reference: " << C_ref[i*N+j] << std::endl;
+                return false;
+            }
         }
     }
 
@@ -114,6 +117,9 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C, bool dbg) {
         case 9:
             run_kernel_9(M, N, K, A, B, C);
             break;
+        case 10:
+            run_kernel_10(M, N, K, A, B, C);
+            break;
     }
 }
 
@@ -159,13 +165,12 @@ int main() {
 
     double cublas_tops;
 
-    for(int kernel = 0; kernel <= 9; kernel++) {
+    for(int kernel = 0; kernel <= 10; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test
         if(kernel > 0) {
-            for(int i = 0; i < M*N; i++) h_C[i] = 0;
-            CHECK_CUDA(cudaMemcpy(d_C, h_C.data(), h_C.size()*sizeof(int), cudaMemcpyHostToDevice));
+            CHECK_CUDA(cudaMemset(d_C, 0, h_C.size()*sizeof(int)));
             run_kernel(kernel, d_A, d_B, d_C, true);
             CHECK_CUDA(cudaDeviceSynchronize());
             CHECK_CUDA(cudaGetLastError());

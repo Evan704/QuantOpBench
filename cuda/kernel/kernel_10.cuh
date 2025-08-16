@@ -6,7 +6,7 @@
 #include<cuda.h>
 #include"wgmma_utils.cuh"
 
-namespace K9 {
+namespace K10 {
 using barrier = cuda::barrier<cuda::thread_scope_block>;
 namespace cde = cuda::device::experimental;
 
@@ -30,7 +30,6 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, C
     const int BKITER = K/BK;
     const int BLOCK_TILE_COL = blockIdx.x%((N+BN-1)/BN);
     const int BLOCK_TILE_ROW = blockIdx.x/((N+BN-1)/BN);
-    const int wg_idx = threadIdx.x/128;
     #pragma nv_diag_suppress static_var_with_dynamic_init
     __shared__ barrier bar[QSIZE];
 
@@ -53,7 +52,7 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, C
 
     int q_idx = 0;
 
-    int d[WGMMA_N/2];
+    int d[BM/WGMMA_M*WGMMA_N/2];
     memset(d, 0, sizeof(d));
 
     for(int k_iter = 0; k_iter < BKITER; k_iter++) {
@@ -68,10 +67,13 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, C
         }
         bar[q_idx].wait(std::move(token[q_idx]));
         warpgroup_arrive();
-        int8_t* As_ptr = As+wg_idx*WGMMA_M*BK+q_idx*BK*BM;
         #pragma unroll
-        for(int k_it = 0; k_it < BK/WGMMA_K; k_it++) {
-            wgmma<WGMMA_N, 1>(d, &As_ptr[k_it*WGMMA_K], &Bs[q_idx*BK*BN+k_it*WGMMA_K]);
+        for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
+            int8_t* As_ptr = As+m_it*WGMMA_M*BK+q_idx*BK*BM;
+            #pragma unroll
+            for(int k_it = 0; k_it < BK/WGMMA_K; k_it++) {
+                wgmma<WGMMA_N, 1>(&d[m_it*WGMMA_N/2], &As_ptr[k_it*WGMMA_K], &Bs[q_idx*BK*BN+k_it*WGMMA_K]);
+            }
         }
         warpgroup_commit_batch();
         warpgroup_wait<0>(); // 0表示等待所有任务完成
@@ -81,13 +83,18 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, C
     const int tid = threadIdx.x%128;
     const int lane = tid%32, warp = tid/32;
     const int row = warp*16+lane/4, col = (lane%4)*2;
-    int* C_ptr = C+BLOCK_TILE_ROW*BM*N+BLOCK_TILE_COL*BN+wg_idx*WGMMA_M*N;
+    int* C_ptr = C+BLOCK_TILE_ROW*BM*N+BLOCK_TILE_COL*BN;
+    int* d_ptr = d;
     const int WGMMA_N_ITER = (BLOCK_TILE_COL == (N+BN-1)/BN-1) ? (N-(N/BN)*BN)/8 : WGMMA_N/8;
 
-    #pragma unroll
-    for(int i = 0; i < WGMMA_N_ITER; i++) {
-        GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d[i*4]);
-        GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d[i*4+2]);
+    for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
+        #pragma unroll
+        for(int i = 0; i < WGMMA_N_ITER; i++) {
+            GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d_ptr[i*4]);
+            GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d_ptr[i*4+2]);
+        }
+        C_ptr += WGMMA_M*N;
+        d_ptr += WGMMA_N/2;
     }
 }
 
@@ -95,11 +102,11 @@ CUtensorMap *d_tma_map_A = 0;
 CUtensorMap *d_tma_map_B = 0;
 int _prev_m = 0, _prev_n = 0, _prev_k = 0;
 
-void run_kernel_9(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
+void run_kernel_10(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     constexpr int BM = 128, BN = 224, BK = 128;
     constexpr int WGMMA_M = 64, WGMMA_N = 224, WGMMA_K = 32;
     static_assert(BK%128 == 0); // Swizzle要求行跨度必须为Swizzle尺寸的倍数
-    constexpr int THREADS_NUM = 128*2;
+    constexpr int THREADS_NUM = 128;
     const int QSIZE = 2;
 
     int8_t* B_padded;
@@ -125,4 +132,4 @@ void run_kernel_9(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
 }
 }
 
-using K9::run_kernel_9;
+using K10::run_kernel_10;

@@ -101,8 +101,8 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, C
                 GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d_ptr[i*4]);
                 GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d_ptr[i*4+2]);
             }
-            C_ptr += WGMMA_M*BK;
-            d_ptr += WGMMA_M*WGMMA_N/2;
+            C_ptr += WGMMA_M*N;
+            d_ptr += WGMMA_N/2;
         }
     }
 }
@@ -110,35 +110,6 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, C
 CUtensorMap *d_tma_map_A = 0;
 CUtensorMap *d_tma_map_B = 0;
 int _prev_m = 0, _prev_n = 0, _prev_k = 0;
-
-template<const int BH, const int BW>
-void create_tensor_map(CUtensorMap* tma_map, int8_t* src, int height, int width) {
-    uint64_t globalDim[5] = {(uint64_t)width, (uint64_t)height, 1, 1, 1};
-    uint64_t globalStride[5] = {sizeof(int8_t), sizeof(int8_t)*width, 0, 0, 0};
-    uint32_t boxDim[5] = {(uint32_t)BW, (uint32_t)BH, 1, 1, 1};
-    uint32_t boxStride[5] = {1, 1, 1, 1, 1};
-    CUresult result = cuTensorMapEncodeTiled(
-        tma_map,
-        CU_TENSOR_MAP_DATA_TYPE_UINT8,
-        2, (void*)src, globalDim, globalStride+1, boxDim, boxStride,
-        CU_TENSOR_MAP_INTERLEAVE_NONE,
-        CU_TENSOR_MAP_SWIZZLE_128B,
-        CU_TENSOR_MAP_L2_PROMOTION_NONE,
-        CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
-    );
-
-    assert(result == CUDA_SUCCESS);
-}
-
-template<const int BH, const int BW>
-__host__ CUtensorMap* allocate_tensor_map(int8_t* src, int height, int width) {
-    CUtensorMap* d_tma_map;
-    cudaMalloc(&d_tma_map, sizeof(CUtensorMap));
-    CUtensorMap h_tma_map;
-    create_tensor_map<BH, BW>(&h_tma_map, src, height, width);
-    cudaMemcpy(d_tma_map, &h_tma_map, sizeof(CUtensorMap), cudaMemcpyHostToDevice);
-    return d_tma_map;
-}
 
 void run_kernel_7(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     constexpr int BM = 128, BN = 128, BK = 128;
