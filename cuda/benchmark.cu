@@ -20,6 +20,7 @@
 #include"kernel/kernel_9.cuh"
 #include"kernel/kernel_10.cuh"
 #include"kernel/kernel_11.cuh"
+#include"kernel/kernel_12.cuh"
 
 // constexpr int M = 4;
 // constexpr int N = 4;
@@ -124,6 +125,9 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C, bool dbg, int8_t* B_padde
         case 11:
             run_kernel_11(M, N, K, A, B, C);
             break;
+        case 12:
+            run_kernel_12(M, N, K, A, B_padded, C);
+            break;
     }
 }
 
@@ -173,7 +177,7 @@ int main() {
 
     double cublas_tops = 1483;
 
-    for(int kernel = 11; kernel <= 11; kernel++) {
+    for(int kernel = 0; kernel <= 12; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test

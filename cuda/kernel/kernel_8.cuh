@@ -108,8 +108,8 @@ void run_kernel_8(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     const int QSIZE = 2;
 
     if(!d_tma_map_A || M != _prev_m || N != _prev_n || K != _prev_k) {
-        d_tma_map_A = allocate_tensor_map<BM, BK>(A, M, K);
-        d_tma_map_B = allocate_tensor_map<BN, BK>(B, N, K);
+        d_tma_map_A = allocate_tensor_map<BM, BK, 2>(A, M, K);
+        d_tma_map_B = allocate_tensor_map<BN, BK, 2>(B, N, K);
         _prev_m = M;
         _prev_n = N;
         _prev_k = K;
