@@ -11,7 +11,6 @@ using barrier = cuda::barrier<cuda::thread_scope_block>;
 namespace cde = cuda::device::experimental;
 
 // 默认BN与WGMMA_N相同
-// 一个producer一个consumer
 template<
     const int BM,
     const int BK,

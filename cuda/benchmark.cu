@@ -19,6 +19,7 @@
 #include"kernel/kernel_8.cuh"
 #include"kernel/kernel_9.cuh"
 #include"kernel/kernel_10.cuh"
+#include"kernel/kernel_11.cuh"
 
 // constexpr int M = 4;
 // constexpr int N = 4;
@@ -66,7 +67,7 @@ void runCublasGemm(int M, int N, int K, int8_t *A, int8_t *B, int *C) {
   }
 }
 
-void run_kernel(int num, int8_t* A, int8_t* B, int* C, bool dbg) {
+void run_kernel(int num, int8_t* A, int8_t* B, int* C, bool dbg, int8_t* B_padded) {
     switch(num) {
         case 0:
             runCublasGemm(M, N, K, A, B, C);
@@ -115,10 +116,13 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C, bool dbg) {
             run_kernel_8(M, N, K, A, B, C);
             break;
         case 9:
-            run_kernel_9(M, N, K, A, B, C);
+            run_kernel_9(M, N, K, A, B_padded, C);
             break;
         case 10:
-            run_kernel_10(M, N, K, A, B, C);
+            run_kernel_10(M, N, K, A, B_padded, C);
+            break;
+        case 11:
+            run_kernel_11(M, N, K, A, B, C);
             break;
     }
 }
@@ -139,16 +143,20 @@ int main() {
     for (size_t i = 0; i < h_A.size(); ++i) h_A[i] = static_cast<int8_t>(distrib(gen));
     for (size_t i = 0; i < h_B.size(); ++i) h_B[i] = static_cast<int8_t>(distrib(gen));
 
-    int8_t *d_A, *d_B;
+    int8_t *d_A, *d_B, *d_B_padded;
     int *d_C;
 
     CHECK_CUDA(cudaMalloc(&d_A, h_A.size() * sizeof(int8_t)));
     CHECK_CUDA(cudaMalloc(&d_B, h_B.size() * sizeof(int8_t)));
+    CHECK_CUDA(cudaMalloc(&d_B_padded, ((N+224-1)/224)*224*K*sizeof(int8_t)));
     CHECK_CUDA(cudaMalloc(&d_C, h_C.size() * sizeof(int)));
 
     // Copy the data to GPU
     CHECK_CUDA(cudaMemcpy(d_A, h_A.data(), h_A.size() * sizeof(int8_t), cudaMemcpyHostToDevice));
     CHECK_CUDA(cudaMemcpy(d_B, h_B.data(), h_B.size() * sizeof(int8_t), cudaMemcpyHostToDevice));
+    
+    CHECK_CUDA(cudaMemset(d_B_padded, 0, ((N+224-1)/224)*224*K*sizeof(int8_t)));
+    CHECK_CUDA(cudaMemcpy(d_B_padded, h_B.data(), h_B.size() * sizeof(int8_t), cudaMemcpyHostToDevice));
 
     // K0::init(M, N, K, d_A, d_B, d_C);
 
@@ -163,15 +171,15 @@ int main() {
     runCublasGemm(M, N, K, d_A, d_B, d_C);
     CHECK_CUDA(cudaMemcpy(h_C_ref.data(), d_C, h_C_ref.size()*sizeof(int), cudaMemcpyDeviceToHost));
 
-    double cublas_tops;
+    double cublas_tops = 1483;
 
-    for(int kernel = 0; kernel <= 10; kernel++) {
+    for(int kernel = 11; kernel <= 11; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test
         if(kernel > 0) {
             CHECK_CUDA(cudaMemset(d_C, 0, h_C.size()*sizeof(int)));
-            run_kernel(kernel, d_A, d_B, d_C, true);
+            run_kernel(kernel, d_A, d_B, d_C, true, d_B_padded);
             CHECK_CUDA(cudaDeviceSynchronize());
             CHECK_CUDA(cudaGetLastError());
             CHECK_CUDA(cudaMemcpy(h_C.data(), d_C, h_C.size()*sizeof(int), cudaMemcpyDeviceToHost));
@@ -180,13 +188,13 @@ int main() {
 
         // warm up
         for (int i = 0; i < warm_up; ++i) {
-            run_kernel(0, d_A, d_B, d_C, false);
+            run_kernel(0, d_A, d_B, d_C, false, d_B_padded);
         }
 
         CHECK_CUDA(cudaEventRecord(start));
 
         for (int i = 0; i < num_runs; ++i) {
-            run_kernel(kernel, d_A, d_B, d_C, false);
+            run_kernel(kernel, d_A, d_B, d_C, false, d_B_padded);
         }
 
         CHECK_CUDA(cudaEventRecord(stop));

@@ -11,7 +11,6 @@ using barrier = cuda::barrier<cuda::thread_scope_block>;
 namespace cde = cuda::device::experimental;
 
 // 默认BN与WGMMA_N相同
-// 一个producer一个consumer
 template<
     const int BM,
     const int BK,
@@ -87,6 +86,7 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, C
     int* d_ptr = d;
     const int WGMMA_N_ITER = (BLOCK_TILE_COL == (N+BN-1)/BN-1) ? (N-(N/BN)*BN)/8 : WGMMA_N/8;
 
+    #pragma unroll
     for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
         #pragma unroll
         for(int i = 0; i < WGMMA_N_ITER; i++) {
@@ -103,21 +103,18 @@ CUtensorMap *d_tma_map_B = 0;
 int _prev_m = 0, _prev_n = 0, _prev_k = 0;
 
 void run_kernel_10(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
+    // 假设主机端已经填充了B
     constexpr int BM = 128, BN = 224, BK = 128;
     constexpr int WGMMA_M = 64, WGMMA_N = 224, WGMMA_K = 32;
     static_assert(BK%128 == 0); // Swizzle要求行跨度必须为Swizzle尺寸的倍数
     constexpr int THREADS_NUM = 128;
-    const int QSIZE = 2;
+    constexpr int QSIZE = 2;
 
-    int8_t* B_padded;
     const int N_padded = ((N+BN-1)/BN)*BN;
-    CHECK_CUDA(cudaMalloc(&B_padded, N_padded*K*sizeof(int8_t)));
-    CHECK_CUDA(cudaMemset(B_padded, 0, N_padded*K*sizeof(int8_t)));
-    CHECK_CUDA(cudaMemcpy(B_padded, B, N*K*sizeof(int8_t), cudaMemcpyDeviceToDevice));
 
     if(!d_tma_map_A || M != _prev_m || N_padded != _prev_n || K != _prev_k) {
         d_tma_map_A = allocate_tensor_map<BM, BK>(A, M, K);
-        d_tma_map_B = allocate_tensor_map<BN, BK>(B_padded, N_padded, K);
+        d_tma_map_B = allocate_tensor_map<BN, BK>(B, N_padded, K);
         _prev_m = M;
         _prev_n = N_padded;
         _prev_k = K;

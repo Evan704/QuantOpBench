@@ -11,7 +11,6 @@ using barrier = cuda::barrier<cuda::thread_scope_block>;
 namespace cde = cuda::device::experimental;
 
 // 默认BN与WGMMA_N相同
-// 一个producer一个consumer
 template<
     const int BM,
     const int BK,
@@ -102,15 +101,11 @@ void run_kernel_9(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     constexpr int THREADS_NUM = 128*2;
     const int QSIZE = 2;
 
-    int8_t* B_padded;
     const int N_padded = ((N+BN-1)/BN)*BN;
-    CHECK_CUDA(cudaMalloc(&B_padded, N_padded*K*sizeof(int8_t)));
-    CHECK_CUDA(cudaMemset(B_padded, 0, N_padded*K*sizeof(int8_t)));
-    CHECK_CUDA(cudaMemcpy(B_padded, B, N*K*sizeof(int8_t), cudaMemcpyDeviceToDevice));
 
     if(!d_tma_map_A || M != _prev_m || N_padded != _prev_n || K != _prev_k) {
         d_tma_map_A = allocate_tensor_map<BM, BK>(A, M, K);
-        d_tma_map_B = allocate_tensor_map<BN, BK>(B_padded, N_padded, K);
+        d_tma_map_B = allocate_tensor_map<BN, BK>(B, N_padded, K);
         _prev_m = M;
         _prev_n = N_padded;
         _prev_k = K;
