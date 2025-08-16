@@ -102,7 +102,7 @@ void run_kernel_12(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     // 假设主机端已经填充了B
     constexpr int BM = 128, BN = 224, BK = 128;
     constexpr int WGMMA_M = 64, WGMMA_N = 224, WGMMA_K = 32;
-    static_assert(BK%128 == 0); // Swizzle要求行跨度必须为Swizzle尺寸的倍数
+    static_assert(BK%128 == 0);
     constexpr int THREADS_NUM = 128;
     constexpr int QSIZE = 2;
 
