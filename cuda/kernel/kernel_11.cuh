@@ -30,10 +30,9 @@ __device__ static inline void load_async(int8_t *dst, void const* const src_tma_
 
     __asm__ __volatile__ (
         "cp.async.bulk.tensor.5d.shared::cluster.global.tile.mbarrier::complete_tx::bytes"
-        " [%0], [%1, {%3, %4, %5, 0, 0}], [%2];"
+        " [%0], [%1, {%3, %4, 0, 0, 0}], [%2];"
         :
-        : "r"(dst_ptr), "l"(tma_ptr), "r"(mbar_ptr),
-        "n"(0), "r"(global_row_idx), "r"(global_col_idx/64)
+        : "r"(dst_ptr), "l"(tma_ptr), "r"(mbar_ptr), "r"(global_col_idx), "r"(global_row_idx)
         : "memory"
     );
 }
@@ -75,7 +74,7 @@ template<
     const int QSIZE,
     const int BN = WGMMA_N
 >
-__global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, const __grid_constant__ CUtensorMap tensorMapA, const __grid_constant__ CUtensorMap tensorMapB, int* C) {
+__global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, CUtensorMap* tensorMapA, CUtensorMap* tensorMapB, int* C) {
     extern __shared__ __align__(128) int8_t smem[];
     int8_t* As = smem;
     int8_t* Bs = smem+BM*BK*QSIZE;
@@ -95,8 +94,8 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, c
 
     if(threadIdx.x == 0) {
         expect_bytes(&bar[0], (BK*BM+BK*BN)*sizeof(int8_t));
-        load_async(As, &tensorMapA, &bar[0], 0, BLOCK_TILE_ROW*BM);
-        load_async(Bs, &tensorMapB, &bar[0], 0, BLOCK_TILE_COL*BN);
+        load_async(As, tensorMapA, &bar[0], 0, BLOCK_TILE_ROW*BM);
+        load_async(Bs, tensorMapB, &bar[0], 0, BLOCK_TILE_COL*BN);
     }
 
     int q_idx = 0, phase = 1;
@@ -110,28 +109,22 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, c
             int next_idx = q_idx^1;
             if(threadIdx.x == 0) {
                 expect_bytes(&bar[next_idx], (BK*BM+BK*BN)*sizeof(int8_t));
-                load_async(&As[next_idx*BK*BM], &tensorMapA, &bar[next_idx], (k_iter+1)*BK, BLOCK_TILE_ROW*BM);
-                load_async(&Bs[next_idx*BK*BN], &tensorMapB, &bar[next_idx], (k_iter+1)*BK, BLOCK_TILE_COL*BN);
+                load_async(&As[next_idx*BK*BM], tensorMapA, &bar[next_idx], (k_iter+1)*BK, BLOCK_TILE_ROW*BM);
+                load_async(&Bs[next_idx*BK*BN], tensorMapB, &bar[next_idx], (k_iter+1)*BK, BLOCK_TILE_COL*BN);
             }
         }
         wait(&bar[q_idx], phase);
-        // warpgroup_arrive();
-        // #pragma unroll
-        // for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
-        //     int8_t* As_ptr = As+m_it*WGMMA_M*64+q_idx*BK*BM;
-        //     int8_t* Bs_ptr = Bs+q_idx*BK*BN;
-        //     #pragma unroll
-        //     for(int bk = 0; bk < BK; bk += 64) {
-        //         #pragma unroll
-        //         for(int k_it = 0; k_it < 64/WGMMA_K; k_it++) {
-        //             wgmma<WGMMA_N, 1>(&d[m_it*WGMMA_N/2], &As_ptr[k_it*WGMMA_K], &Bs_ptr[k_it*WGMMA_K]);
-        //         }
-        //         As_ptr += 64*BM;
-        //         Bs_ptr += 64*BN;
-        //     }
-        // }
-        // warpgroup_commit_batch();
-        // warpgroup_wait<0>(); // 0表示等待所有任务完成
+        warpgroup_arrive();
+        #pragma unroll
+        for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
+            int8_t* As_ptr = As+m_it*WGMMA_M*BK+q_idx*BK*BM;
+            #pragma unroll
+            for(int k_it = 0; k_it < BK/WGMMA_K; k_it++) {
+                wgmma<WGMMA_N, 1>(&d[m_it*WGMMA_N/2], &As_ptr[k_it*WGMMA_K], &Bs[q_idx*BK*BN+k_it*WGMMA_K]);
+            }
+        }
+        warpgroup_commit_batch();
+        warpgroup_wait<0>(); // 0表示等待所有任务完成
         q_idx ^= 1;
     }
 
@@ -141,40 +134,19 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, c
     int* C_ptr = C+BLOCK_TILE_ROW*BM*N+BLOCK_TILE_COL*BN;
     int* d_ptr = d;
 
-    // for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
-    //     #pragma unroll
-    //     for(int i = 0; i < WGMMA_N/8; i++) {
-    //         GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d_ptr[i*4]);
-    //         GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d_ptr[i*4+2]);
-    //     }
-    //     C_ptr += WGMMA_M*N;
-    //     d_ptr += WGMMA_N/2;
-    // }
+    for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
+        #pragma unroll
+        for(int i = 0; i < WGMMA_N/8; i++) {
+            GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d_ptr[i*4]);
+            GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d_ptr[i*4+2]);
+        }
+        C_ptr += WGMMA_M*N;
+        d_ptr += WGMMA_N/2;
+    }
 }
 
-template<const int BH, const int BW>
-CUtensorMap create_tensor_map_2(int8_t* src, int height, int width) {
-    CUtensorMap tma_map;
-    uint64_t globalDim[5] = {64, (uint64_t)height, (uint64_t)width, 1, 1};
-    uint64_t globalStride[5] = {sizeof(int8_t)*width, sizeof(int8_t)*64, 0, 0, 0};
-    uint32_t boxDim[5] = {64, (uint32_t)BH, (uint32_t)BW/64, 1, 1};
-    uint32_t boxStride[5] = {1, 1, 1, 1, 1};
-    CUresult result = cuTensorMapEncodeTiled(
-        &tma_map,
-        CU_TENSOR_MAP_DATA_TYPE_UINT8,
-        5, (void*)src, globalDim, globalStride+1, boxDim, boxStride,
-        CU_TENSOR_MAP_INTERLEAVE_NONE,
-        CU_TENSOR_MAP_SWIZZLE_128B,
-        CU_TENSOR_MAP_L2_PROMOTION_NONE,
-        CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE
-    );
-
-    assert(result == CUDA_SUCCESS);
-    return tma_map;
-}
-
-CUtensorMap d_tma_map_A;
-CUtensorMap d_tma_map_B;
+CUtensorMap *d_tma_map_A = 0;
+CUtensorMap *d_tma_map_B = 0;
 int _prev_m = 0, _prev_n = 0, _prev_k = 0;
 
 void run_kernel_11(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
@@ -184,9 +156,9 @@ void run_kernel_11(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     constexpr int THREADS_NUM = 128;
     const int QSIZE = 2;
 
-    if(M != _prev_m || N != _prev_n || K != _prev_k) {
-        d_tma_map_A = create_tensor_map_2<BM, BK>(A, M, K);
-        d_tma_map_B = create_tensor_map_2<BN, BK>(B, N, K);
+    if(!d_tma_map_A || M != _prev_m || N != _prev_n || K != _prev_k) {
+        d_tma_map_A = allocate_tensor_map<BM, BK>(A, M, K);
+        d_tma_map_B = allocate_tensor_map<BN, BK>(B, N, K);
         _prev_m = M;
         _prev_n = N;
         _prev_k = K;

@@ -168,7 +168,7 @@ void create_tensor_map(CUtensorMap* tma_map, int8_t* src, int height, int width)
     CUresult result = cuTensorMapEncodeTiled(
         tma_map,
         CU_TENSOR_MAP_DATA_TYPE_UINT8,
-        2, (void*)src, globalDim, globalStride+1, boxDim, boxStride,
+        5, (void*)src, globalDim, globalStride+1, boxDim, boxStride,
         CU_TENSOR_MAP_INTERLEAVE_NONE,
         CU_TENSOR_MAP_SWIZZLE_128B,
         CU_TENSOR_MAP_L2_PROMOTION_NONE,
