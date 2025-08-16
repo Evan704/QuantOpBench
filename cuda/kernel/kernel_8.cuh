@@ -6,7 +6,7 @@
 #include<cuda.h>
 #include"wgmma_utils.cuh"
 
-namespace K7 {
+namespace K8 {
 using barrier = cuda::barrier<cuda::thread_scope_block>;
 namespace cde = cuda::device::experimental;
 
@@ -31,79 +31,69 @@ __global__ void __launch_bounds__(THREADS_NUM) gemm_wgmma(int M, int N, int K, C
     const int BLOCK_TILE_COL = blockIdx.x%(N/BN);
     const int BLOCK_TILE_ROW = blockIdx.x/(N/BN);
     #pragma nv_diag_suppress static_var_with_dynamic_init
-    __shared__ barrier full[QSIZE], empty[QSIZE];
+    __shared__ barrier bar[QSIZE];
 
     if(threadIdx.x == 0) {
         for(int i = 0; i < QSIZE; i++) {
-            init(&full[i], 128+1);
-            init(&empty[i], 128+1);
+            init(&bar[i], THREADS_NUM);
         }
         cde::fence_proxy_async_shared_cta();
     }
     __syncthreads();
 
-    const int wg_idx = threadIdx.x/128;
+    barrier::arrival_token token[2];
 
-    if(wg_idx == 0) {
-        // Producer
-        if(threadIdx.x == 0) {
-            int q_idx = 0;
-            for(int k_iter = 0; k_iter < BKITER; k_iter++) {
-                if(q_idx == QSIZE) q_idx = 0;
-                empty[q_idx].wait(empty[q_idx].arrive());
-                cde::cp_async_bulk_tensor_2d_global_to_shared(&As[q_idx*BK*BM], tensorMapA, k_iter*BK, BLOCK_TILE_ROW*BM, full[q_idx]);
-                cde::cp_async_bulk_tensor_2d_global_to_shared(&Bs[q_idx*BK*BN], tensorMapB, k_iter*BK, BLOCK_TILE_COL*BN, full[q_idx]);
-                cuda::device::barrier_arrive_tx(full[q_idx], 1, (BK*BM+BK*BN)*sizeof(int8_t));
-                q_idx++;
-            }
-        }
+    if(threadIdx.x == 0) {
+        cde::cp_async_bulk_tensor_2d_global_to_shared(As, tensorMapA, 0, BLOCK_TILE_ROW*BM, bar[0]);
+        cde::cp_async_bulk_tensor_2d_global_to_shared(Bs, tensorMapB, 0, BLOCK_TILE_COL*BN, bar[0]);
+        token[0] = cuda::device::barrier_arrive_tx(bar[0], 1, (BK*BM+BK*BN)*sizeof(int8_t));
     }
-    else {
-        // Consumer
-        // Initialize
-        for(int i = 0; i < QSIZE; i++) {
-            empty[i].arrive();
-        }
+    else token[0] = bar[0].arrive();
 
-        // 每次WGMMA存储WGMMA_N*4/8个结果
-        int d[BM/WGMMA_M*WGMMA_N/2];
-        memset(d, 0, sizeof(d));
+    int q_idx = 0;
 
-        int q_idx = 0;
+    int d[BM/WGMMA_M*WGMMA_N/2];
+    memset(d, 0, sizeof(d));
 
-        for(int k_iter = 0; k_iter < BKITER; k_iter++) {
-            if(q_idx == QSIZE) q_idx = 0;
-            full[q_idx].wait(full[q_idx].arrive());
-            warpgroup_arrive();
-            #pragma unroll
-            for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
-                int8_t* As_ptr = As+m_it*WGMMA_M*BK+q_idx*BK*BM;
-                #pragma unroll
-                for(int k_it = 0; k_it < BK/WGMMA_K; k_it++) {
-                    wgmma<WGMMA_N, 1>(&d[m_it*WGMMA_N/2], &As_ptr[k_it*WGMMA_K], &Bs[q_idx*BK*BN+k_it*WGMMA_K]);
-                }
+    for(int k_iter = 0; k_iter < BKITER; k_iter++) {
+        if(k_iter+1 < BKITER) {
+            int next_idx = q_idx^1;
+            if(threadIdx.x == 0) {
+                cde::cp_async_bulk_tensor_2d_global_to_shared(&As[next_idx*BK*BM], tensorMapA, (k_iter+1)*BK, BLOCK_TILE_ROW*BM, bar[next_idx]);
+                cde::cp_async_bulk_tensor_2d_global_to_shared(&Bs[next_idx*BK*BN], tensorMapB, (k_iter+1)*BK, BLOCK_TILE_COL*BN, bar[next_idx]);
+                token[next_idx] = cuda::device::barrier_arrive_tx(bar[next_idx], 1, (BK*BM+BK*BN)*sizeof(int8_t));
             }
-            warpgroup_commit_batch();
-            warpgroup_wait<0>(); // 0表示等待所有任务完成
-            empty[q_idx].arrive();
-            q_idx++;
+            else token[next_idx] = bar[next_idx].arrive();
         }
-
-        const int tid = threadIdx.x%128;
-        const int lane = tid%32, warp = tid/32;
-        const int row = warp*16+lane/4, col = (lane%4)*2;
-        int* C_ptr = C+BLOCK_TILE_ROW*BM*N+BLOCK_TILE_COL*BN;
-        int* d_ptr = d;
-
+        bar[q_idx].wait(std::move(token[q_idx]));
+        warpgroup_arrive();
+        #pragma unroll
         for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
+            int8_t* As_ptr = As+m_it*WGMMA_M*BK+q_idx*BK*BM;
             #pragma unroll
-            for(int i = 0; i < WGMMA_N/8; i++) {
-                GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d_ptr[i*4]);
-                GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d_ptr[i*4+2]);
+            for(int k_it = 0; k_it < BK/WGMMA_K; k_it++) {
+                wgmma<WGMMA_N, 1>(&d[m_it*WGMMA_N/2], &As_ptr[k_it*WGMMA_K], &Bs[q_idx*BK*BN+k_it*WGMMA_K]);
             }
-            C_ptr += WGMMA_M*BK;
-            d_ptr += WGMMA_M*WGMMA_N/2;
         }
+        warpgroup_commit_batch();
+        warpgroup_wait<0>(); // 0表示等待所有任务完成
+        q_idx ^= 1;
+    }
+
+    const int tid = threadIdx.x%128;
+    const int lane = tid%32, warp = tid/32;
+    const int row = warp*16+lane/4, col = (lane%4)*2;
+    int* C_ptr = C+BLOCK_TILE_ROW*BM*N+BLOCK_TILE_COL*BN;
+    int* d_ptr = d;
+
+    for(int m_it = 0; m_it < BM/WGMMA_M; m_it++) {
+        #pragma unroll
+        for(int i = 0; i < WGMMA_N/8; i++) {
+            GET_INT2(&C_ptr[row*N+col+i*8]) = GET_INT2(&d_ptr[i*4]);
+            GET_INT2(&C_ptr[(row+8)*N+col+i*8]) = GET_INT2(&d_ptr[i*4+2]);
+        }
+        C_ptr += WGMMA_M*BK;
+        d_ptr += WGMMA_M*WGMMA_N/2;
     }
 }
 
@@ -140,12 +130,12 @@ __host__ CUtensorMap* allocate_tensor_map(int8_t* src, int height, int width) {
     return d_tma_map;
 }
 
-void run_kernel_7(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
+void run_kernel_8(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
     constexpr int BM = 128, BN = 128, BK = 128;
     const int WGMMA_M = 64, WGMMA_N = 128, WGMMA_K = 32;
     static_assert(BK%128 == 0); // Swizzle要求行跨度必须为Swizzle尺寸的倍数
-    constexpr int THREADS_NUM = 128*2;
-    const int QSIZE = 4;
+    constexpr int THREADS_NUM = 128;
+    const int QSIZE = 2;
 
     if(!d_tma_map_A || M != _prev_m || N != _prev_n || K != _prev_k) {
         d_tma_map_A = allocate_tensor_map<BM, BK>(A, M, K);
@@ -164,4 +154,4 @@ void run_kernel_7(int M, int N, int K, int8_t* A, int8_t* B, int* C) {
 }
 }
 
-using K7::run_kernel_7;
+using K8::run_kernel_8;

@@ -8,14 +8,16 @@
 #include<iomanip>
 
 #include"kernel/macro.h"
+#include"kernel/kernel_0.cuh"
 #include"kernel/kernel_1.cuh"
 #include"kernel/kernel_2.cuh"
 #include"kernel/kernel_3.cuh"
 #include"kernel/kernel_4.cuh"
 #include"kernel/kernel_5.cuh"
-#include"kernel/kernel_0.cuh"
 #include"kernel/kernel_6.cuh"
 #include"kernel/kernel_7.cuh"
+#include"kernel/kernel_8.cuh"
+#include"kernel/kernel_9.cuh"
 
 // constexpr int M = 4;
 // constexpr int N = 4;
@@ -44,7 +46,7 @@ bool verify_result(const int* C, const int* C_ref, int M, int N) {
         }
     }
 
-    std::cout << "Verification PASSED!" << std::endl;
+    std::cout << "Verification PASSED!" << std::endl << std::endl;
     return true;
 }
 
@@ -106,6 +108,12 @@ void run_kernel(int num, int8_t* A, int8_t* B, int* C, bool dbg) {
         case 7:
             run_kernel_7(M, N, K, A, B, C);
             break;
+        case 8:
+            run_kernel_8(M, N, K, A, B, C);
+            break;
+        case 9:
+            run_kernel_9(M, N, K, A, B, C);
+            break;
     }
 }
 
@@ -151,7 +159,7 @@ int main() {
 
     double cublas_tops;
 
-    for(int kernel = 0; kernel <= 7; kernel++) {
+    for(int kernel = 0; kernel <= 9; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test
