@@ -1,3 +1,5 @@
+// warp tile
+// 每个线程块负责BM*BN，每个warp负责WM*WN，每个线程负责TM*TN
 #include<cuda_runtime.h>
 #include"macro.h"
 #include<iostream>

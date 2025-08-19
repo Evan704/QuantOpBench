@@ -180,12 +180,13 @@ int main() {
     CHECK_CUDA(cudaMemcpy(h_C_ref.data(), d_C, h_C_ref.size()*sizeof(int), cudaMemcpyDeviceToHost));
 
     double cublas_tops = 1483;
+    bool verify = true;
 
     for(int kernel = 0; kernel <= 13; kernel++) {
         std::cout << "Kernel " << kernel << ":" << std::endl;
 
         // test
-        if(kernel > 0) {
+        if(kernel > 0 && verify) {
             CHECK_CUDA(cudaMemset(d_C, 0, h_C.size()*sizeof(int)));
             run_kernel(kernel, d_A, d_B, d_C, true, d_B_padded);
             CHECK_CUDA(cudaDeviceSynchronize());

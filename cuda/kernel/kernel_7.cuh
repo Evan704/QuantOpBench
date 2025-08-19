@@ -1,3 +1,4 @@
+// 分离数据搬运和计算，单Producer单Consumer
 #include<cuda_runtime.h>
 #include"macro.h"
 #include<cstdint>

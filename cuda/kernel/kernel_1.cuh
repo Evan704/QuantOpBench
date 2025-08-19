@@ -1,4 +1,5 @@
-// tile
+// block tile
+// 每个线程块负责BM*BN, 每个线程负责RM*RN
 #include<cuda_runtime.h>
 #include"macro.h"
 

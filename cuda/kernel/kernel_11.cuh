@@ -1,3 +1,4 @@
+// 改用PTX的barrier
 #include<cuda_runtime.h>
 #include"macro.h"
 #include<cstdint>

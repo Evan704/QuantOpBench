@@ -1,3 +1,4 @@
+// 增大分块大小
 #include<cuda_runtime.h>
 #include"macro.h"
 #include<cstdint>

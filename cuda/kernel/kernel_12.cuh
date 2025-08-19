@@ -1,3 +1,4 @@
+// ptx barrier + n224 wgmma
 #include<cuda_runtime.h>
 #include"macro.h"
 #include<cstdint>

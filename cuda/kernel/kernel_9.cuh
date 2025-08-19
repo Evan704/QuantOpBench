@@ -1,3 +1,4 @@
+// 尝试增加线程数，降低每个线程的寄存器使用量
 #include<cuda_runtime.h>
 #include"macro.h"
 #include<cstdint>

@@ -1,3 +1,4 @@
+// 双缓存
 #include<cuda_runtime.h>
 #include"macro.h"
 #include<cstdint>

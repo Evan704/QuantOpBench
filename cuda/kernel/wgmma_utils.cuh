@@ -1,7 +1,7 @@
 #pragma once
 #include<cstdint>
 
-// Copied from https://github.com/pranjalssh/fast.cu
+// Adapted from https://github.com/pranjalssh/fast.cu
 __device__ static inline uint64_t matrix_descriptor_encode(uint64_t x) { return (((x) & 0x3FFFF) >> 0x4); }
 
 __device__ uint64_t make_smem_desc(int8_t* ptr) {

@@ -1,3 +1,4 @@
+// 尝试使用更大尺寸的wgmma
 #include<cuda_runtime.h>
 #include"macro.h"
 #include<cstdint>

@@ -1,4 +1,5 @@
-// tile_trans
+// block tile trans
+// 从Gmem搬运到Smem时转置存储
 #include<cuda_runtime.h>
 #include"macro.h"
 

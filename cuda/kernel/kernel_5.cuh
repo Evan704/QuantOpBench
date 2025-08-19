@@ -1,3 +1,4 @@
+// 改用wgmma，增加了TMA异步搬运数据
 #include<cuda_runtime.h>
 #include"macro.h"
 #include<cstdint>

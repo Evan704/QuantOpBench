@@ -2,6 +2,7 @@
 #include<cuda_runtime.h>
 #include<cstdint>
 
+// Copied from https://github.com/pranjalssh/fast.cu
 __device__ static __forceinline__ void init_barrier(uint64_t* bar, int thread_count, int transaction_count) {
     uint32_t bar_ptr = static_cast<uint32_t>(__cvta_generic_to_shared(bar)); 
     asm volatile (

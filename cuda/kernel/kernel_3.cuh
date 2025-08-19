@@ -1,4 +1,5 @@
 // mma
+// 使用PTX代替部分CUDA代码
 #include<cuda_runtime.h>
 #include"macro.h"
 
